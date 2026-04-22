@@ -28,7 +28,7 @@ function showMobileUrl() {
 }
 
 export default defineConfig({
-  base: '/EnglishPronunciation/',
+  base: '/learnPronunciation/',
   plugins: [react(), basicSsl(), showMobileUrl()],
   server: {
     host: '0.0.0.0',
