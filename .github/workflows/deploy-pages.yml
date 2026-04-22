@@ -40,13 +40,14 @@ jobs:
             echo "Missing required GitHub Actions secret: VITE_AZURE_KEY"
             exit 1
           fi
+          echo "Azure key is configured with ${#VITE_AZURE_KEY} characters."
         env:
-          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY || secrets.vite_azure_key }}
+          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY }}
 
       - name: Build
         run: npm run build
         env:
-          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY || secrets.vite_azure_key }}
+          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY }}
           VITE_AZURE_REGION: ${{ vars.VITE_AZURE_REGION || 'southeastasia' }}
 
       - name: Upload artifact
