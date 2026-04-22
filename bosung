@@ -1,0 +1,5 @@
+DONE: Azure usage display (hours used / 5h free) — shown in header on app open.
+DONE: Spanish (es-ES) — 13 sounds: 5 vowels + 8 consonants (rr trill, j/x, ñ, y/ll, etc.)
+DONE: Italian (it-IT) — 12 sounds: 5 vowels + 7 consonants (r trill, gli, gn, z/ts, sc/ʃ, etc.)
+Language selector (EN/ES/IT tabs) on Sound Library screen.
+Azure scores correctly using language-specific models.

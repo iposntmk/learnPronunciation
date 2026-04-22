@@ -1,0 +1,35 @@
+
+• Webapp này là app luyện phát âm hơn là web quản trị. Nhìn từ phía người dùng, nó có 3 nhóm chức năng chính:
+
+  1. Sound Library
+      - Hiển thị thư viện âm vị theo nhóm nguyên âm / phụ âm.
+      - Hỗ trợ 4 ngôn ngữ: English, Spanish, Italian, French.
+      - Mỗi âm có trang chi tiết: ký hiệu IPA, mẹo đặt lưỡi/môi, từ ví dụ, nút nghe mẫu.
+      - Riêng tiếng Anh còn có link sang Rachel’s English / YouTube để học thêm.
+  2. Luyện phát âm theo từ
+      - Chọn một từ mẫu từ thư viện âm, nghe phát âm chuẩn bằng TTS.
+      - Bấm ghi âm bằng microphone trong số giây cấu hình sẵn.
+      - App chấm điểm tổng và điểm từng âm vị, tô màu xanh/vàng/đỏ.
+      - Có thể bấm vào từng âm để xem tip sửa lỗi, và nếu có timing từ Azure thì nghe lại đúng đoạn âm mình vừa nói.
+      - Với tiếng Anh, app còn kiểm tra trọng âm; nhấn sai có thể bị kéo điểm về 0.
+  3. Từ điển phát âm
+      - Nhập một từ tiếng Anh bất kỳ để app tự tách thành các âm IPA rồi cho luyện/chấm điểm giống màn practice.
+      - Có danh sách từ gợi ý để thử nhanh.
+
+  Cách nó hoạt động bên dưới:
+
+  - Frontend là React + Vite trong src/App.jsx, dữ liệu thư viện âm nằm ở src/data.js.
+  - Khi người dùng nghe mẫu, app gọi Azure TTS; nếu không có key thì fallback sang speechSynthesis của trình duyệt trong src/tts.js.
+  - Khi người dùng ghi âm, app dùng MediaRecorder, rồi đổi audio sang WAV 16kHz và gửi lên Azure Speech Pronunciation Assessment để lấy:
+      - từ hệ thống nghe được,
+      - điểm tổng,
+      - điểm từng phoneme,
+      - timing từng phoneme,
+      - kiểm tra trọng âm tiếng Anh. Phần này nằm ở src/api-scorers.js và src/scorer.js.
+  - App còn lưu vài thứ trong localStorage: thời lượng ghi âm mặc định và mức sử dụng Azure theo tháng trong src/azureUsage.js.
+
+  Một điểm cần lưu ý: hiện luồng chính đang dùng Azure trực tiếp từ frontend. Thư mục backend/main.py và backend/scorer.py là một backend Python chấm phát âm kiểu khác,
+  nhưng chưa phải đường chạy chính của webapp hiện tại.
+
+  Nếu muốn, mình có thể vẽ tiếp cho bạn một sơ đồ ngắn kiểu: người dùng bấm ghi âm -> frontend xử lý audio -> Azure chấm điểm -> UI hiển thị kết quả.
+
