@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    environment: github-pages
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,12 +41,12 @@ jobs:
             exit 1
           fi
         env:
-          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY }}
+          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY || secrets.vite_azure_key }}
 
       - name: Build
         run: npm run build
         env:
-          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY }}
+          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY || secrets.vite_azure_key }}
           VITE_AZURE_REGION: ${{ vars.VITE_AZURE_REGION || 'southeastasia' }}
 
       - name: Upload artifact
