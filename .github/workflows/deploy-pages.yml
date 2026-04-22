@@ -33,8 +33,20 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
+      - name: Check Azure configuration
+        run: |
+          if [ -z "$VITE_AZURE_KEY" ]; then
+            echo "Missing required GitHub Actions secret: VITE_AZURE_KEY"
+            exit 1
+          fi
+        env:
+          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY }}
+
       - name: Build
         run: npm run build
+        env:
+          VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY }}
+          VITE_AZURE_REGION: ${{ vars.VITE_AZURE_REGION || 'southeastasia' }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
