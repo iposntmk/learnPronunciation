@@ -50,6 +50,8 @@ jobs:
         env:
           VITE_AZURE_KEY: ${{ secrets.VITE_AZURE_KEY }}
           VITE_AZURE_REGION: ${{ vars.VITE_AZURE_REGION || 'southeastasia' }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://dptkjsdmimixmggmoklq.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_Dr2GIkjq6XPu6e290BBN6g_Xrpsasb0' }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
