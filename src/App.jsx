@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Mic, Volume2, Search, ChevronLeft, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings } from 'lucide-react'
+import { Mic, Volume2, Search, ChevronLeft, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings, Shield, LogOut } from 'lucide-react'
 import {
   SOUNDS, VOWEL_GROUPS, CONSONANT_GROUPS,
   SPANISH_SOUNDS, SPANISH_VOWEL_GROUPS, SPANISH_CONSONANT_GROUPS, SPANISH_PHONEME_INFO,
@@ -9,8 +9,11 @@ import {
 import { scoreWord } from './scorer.js'
 import { getAzureUsageSummary } from './azureUsage.js'
 import { speakNeural, speakPhoneme } from './tts.js'
-import { COMMON_3000_WORDS, COMMON_3000_LEVELS, COMMON_3000_COUNTS } from './commonWords.js'
-import { COMMON_3000_DETAIL_MAP } from './commonWordDetails.js'
+import { COMMON_3000_LEVELS } from './commonWords.js'
+import AuthGate from './AuthGate.jsx'
+import AdminScreen from './AdminScreen.jsx'
+import { supabase } from './supabaseClient.js'
+import { getWordByText, listCategories, listMyProgress, listWords, savePronunciationResult, setWordLearned } from './supabaseData.js'
 
 // ─── RACHEL'S ENGLISH LINKS ────────────────────────────────────────────────
 
@@ -767,6 +770,36 @@ function scoreColor(s) { return s >= 85 ? 'text-emerald-400' : s >= 65 ? 'text-y
 function scoreBg(s) { return s >= 85 ? 'bg-emerald-500/20 border-emerald-500/50' : s >= 65 ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-red-500/20 border-red-500/50' }
 function scoreLabel(s) { return s >= 90 ? 'Excellent!' : s >= 75 ? 'Good job!' : s >= 60 ? 'Almost there' : 'Keep practicing' }
 function formatIpa(p) { return `${p.isStressed ? 'ˈ' : ''}${p.ipa}` }
+
+function ScoreCircle({ score, size = 44 }) {
+  const s = Math.max(0, Math.min(100, Math.round(Number(score) || 0)))
+  const r = 18
+  const c = 2 * Math.PI * r
+  const off = c * (1 - s / 100)
+  const stroke = s >= 85 ? '#34d399' : s >= 65 ? '#facc15' : '#f87171'
+  return (
+    <div className="shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox="0 0 44 44">
+        <circle cx="22" cy="22" r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
+        <circle
+          cx="22"
+          cy="22"
+          r={r}
+          fill="none"
+          stroke={stroke}
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={off}
+          style={{ transition: 'none', transform: 'rotate(-90deg)', transformOrigin: '22px 22px' }}
+        />
+        <text x="22" y="24" textAnchor="middle" fontSize="12" fill="rgba(255,255,255,0.9)" fontWeight="700">
+          {s}%
+        </text>
+      </svg>
+    </div>
+  )
+}
 function googleTranslateApiUrl(text) {
   return `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(text)}`
 }
@@ -796,10 +829,6 @@ function loadIncorrectWordReports() {
 
 function saveIncorrectWordReports(reports) {
   localStorage.setItem(INCORRECT_WORD_REPORTS_KEY, JSON.stringify(reports))
-}
-
-function scoreRoseCount(score) {
-  return Math.max(0, Math.min(5, Math.round(score / 20)))
 }
 
 function uniqueList(items) {
@@ -900,30 +929,50 @@ function baseWordForms(word) {
   return [...forms]
 }
 
-function findLocalWordFamily(word) {
-  const forms = baseWordForms(word)
-  const exact = word.toLowerCase().trim()
-  if (!exact || exact.includes(' ')) return []
-
-  return COMMON_3000_WORDS
-    .map(entry => entry.word)
-    .filter(candidate => {
-      const lower = candidate.toLowerCase()
-      return lower !== exact && forms.some(form => lower === form || lower.startsWith(form))
-    })
-    .slice(0, 6)
-}
-
-function buildWordRelations(word) {
+function buildWordRelations(word, detail = null) {
   const key = word.toLowerCase().trim()
   const override = WORD_RELATION_OVERRIDES[key] || {}
-  const family = uniqueList([...(override.family || []), ...findLocalWordFamily(word)]).slice(0, 6)
+  const detailRelations = detail?.relations || {}
 
   return {
-    family,
-    synonyms: uniqueList(override.synonyms || []).slice(0, 5),
-    antonyms: uniqueList(override.antonyms || []).slice(0, 5),
+    family: uniqueList([...(detailRelations.family || []), ...(override.family || [])]).slice(0, 8),
+    synonyms: uniqueList([...(detailRelations.synonyms || []), ...(override.synonyms || [])]).slice(0, 8),
+    antonyms: uniqueList([...(detailRelations.antonyms || []), ...(override.antonyms || [])]).slice(0, 8),
   }
+}
+
+function looksLikeIpaForScoring(raw) {
+  const value = String(raw || '').trim()
+  if (!value) return false
+  return /[əɪɛæʌʊɑɒɔɜθðʃʒŋˈː]/.test(value) || value.includes('´') || value.includes('’') || value.includes('з')
+}
+
+function normalizeSupabaseIpa(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/\u00C2\u00B4/g, 'ˈ')
+    .replace(/\u00B4/g, 'ˈ')
+    .replace(/[’']/g, 'ˈ')
+    .replace(/з/g, 'ə')
+}
+
+function phonemesFromSupabaseIpa(rawIpa) {
+  if (!looksLikeIpaForScoring(rawIpa)) return null
+  const normalized = normalizeSupabaseIpa(rawIpa)
+  const tokens = tokenizeExternalIpa(normalized)
+  const ipaParts = tokens.map(t => t.ipa).filter(Boolean)
+  if (ipaParts.length < 2) return null
+  return ipaParts.map(ipa => ({
+    text: ipa,
+    ipa,
+    tip: PHONEME_INFO[ipa]?.tip || `Âm /${ipa}/`,
+    isHard: PHONEME_INFO[ipa]?.hard || false,
+    isStressed: false,
+    canScore: true,
+    lookupNote: null,
+    audioOffset: null,
+    audioDuration: null,
+  }))
 }
 
 function buildWordStructures(word) {
@@ -961,6 +1010,7 @@ function PronunciationPractice({
   word,
   meaning,
   emoji,
+  metaLine = null,
   lang = 'en-US',
   prebuiltPhonemes = null,
   strictLookup = false,
@@ -974,6 +1024,7 @@ function PronunciationPractice({
   onNext = null,
   onPrev = null,
   onSearchWord = null,
+  onScoreResult = null,
   voiceControlEnabled = false,
   onVoiceControlChange = null,
   practiceSettings = DEFAULT_PRACTICE_SETTINGS,
@@ -987,7 +1038,6 @@ function PronunciationPractice({
   const [phase, setPhase] = useState('ready')
   const [errorMsg, setErrorMsg] = useState(null)
   const [result, setResult] = useState(null)
-  const [animatedOverall, setAnimatedOverall] = useState(0)
   const [selectedIdx, setSelectedIdx] = useState(null)
   const [recordingUrl, setRecordingUrl] = useState(null)
   const [isPlayingBack, setIsPlayingBack] = useState(false)
@@ -1026,23 +1076,7 @@ function PronunciationPractice({
     setTranslation({ word, text: '', loading: false, error: null })
   }, [practiceSettings.autoExpandUsage, word])
 
-  useEffect(() => {
-    if (!result) {
-      setAnimatedOverall(0)
-      return
-    }
-
-    setAnimatedOverall(0)
-    let timer = null
-    const frame = requestAnimationFrame(() => {
-      timer = setTimeout(() => setAnimatedOverall(result.overall), 80)
-    })
-
-    return () => {
-      cancelAnimationFrame(frame)
-      if (timer) clearTimeout(timer)
-    }
-  }, [result])
+  // No slow-motion score animation.
 
   useEffect(() => {
     let cancelled = false
@@ -1091,6 +1125,7 @@ function PronunciationPractice({
           try {
             const data = await scoreWord(blob, phonemes, lang)
             setResult(data); setPhase('result')
+            Promise.resolve(onScoreResult?.(data)).catch(err => console.warn('[Supabase] score sync failed:', err.message))
           } catch (err) {
             setErrorMsg(`Scoring error: ${err.message}`); setPhase('ready')
           }
@@ -1184,7 +1219,7 @@ function PronunciationPractice({
   const detailMeanings = detail?.meanings || []
   const usageMeanings = detailMeanings.filter(item => item.pos !== 'translate')
   const needsMachineTranslation = detailMeanings.length === 0 || detailMeanings.some(item => item.pos === 'translate')
-  const wordRelations = buildWordRelations(word)
+  const wordRelations = buildWordRelations(word, detail)
   const wordStructures = buildWordStructures(word)
   const wordReportKey = `${lang}:${word.toLowerCase()}`
   const isReportedIncorrect = Boolean(incorrectReports[wordReportKey])
@@ -1404,8 +1439,18 @@ function PronunciationPractice({
             {word}
             <Volume2 size={compact ? 24 : 28} className="text-white/55" />
           </button>
+          {result && (
+            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-left">
+              <ScoreCircle score={result.overall} size={compact ? 38 : 44} />
+              <div className="min-w-0">
+                <div className={`text-xs font-bold leading-tight ${scoreColor(result.overall)}`}>{scoreLabel(result.overall)}</div>
+                <div className="max-w-28 truncate text-[10px] text-white/45">Heard: {result.spokenWord || '-'}</div>
+              </div>
+            </div>
+          )}
         </div>
-        <div className={`${compact ? 'text-sm' : 'text-xs'} text-white/55 mt-0.5`}>{meaning}</div>
+        {metaLine && <div className="text-[10px] text-white/40 mt-1">{metaLine}</div>}
+        <div className="text-[11px] text-white/60 mt-0.5">{meaning}</div>
         <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
           <div className={`${compact ? 'text-2xl' : 'text-3xl'} text-cyan-100/90 font-mono font-semibold break-all leading-tight`}>/{phonemes.map(formatIpa).join('')}/</div>
           <label className={`shrink-0 rounded-xl border px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold active:scale-95 ${isReportedIncorrect ? 'bg-red-500/20 border-red-400/40 text-red-200' : 'bg-white/5 border-white/10 text-white/55'}`}>
@@ -1522,9 +1567,8 @@ function PronunciationPractice({
       </div>
 
       {/* Kết quả tổng */}
-      {result && (() => {
-        const roseCount = scoreRoseCount(result.overall)
-        return (
+      {result && !compact && <p className="mx-4 mb-1 text-center text-white/40 text-xs">Tap each sound for details</p>}
+      {false && (
           <div className="mx-4 mb-1 rounded-xl p-2 border bg-white/5 border-white/10">
             <div className="flex items-center justify-between mb-1">
               <span className="text-white/60 text-sm">Result:</span>
@@ -1532,24 +1576,23 @@ function PronunciationPractice({
             </div>
             <div className="flex items-center gap-3">
               <div className="flex-1 h-3 bg-white/10 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all duration-700 ease-out ${result.overall >= 85 ? 'bg-emerald-400' : result.overall >= 65 ? 'bg-yellow-400' : 'bg-red-400'}`}
-                  style={{ width: `${animatedOverall}%` }} />
+                <div className={`h-full rounded-full ${result.overall >= 85 ? 'bg-emerald-400' : result.overall >= 65 ? 'bg-yellow-400' : 'bg-red-400'}`}
+                  style={{ width: `${result.overall}%` }} />
               </div>
               <span className={`font-bold text-lg ${scoreColor(result.overall)}`}>{result.overall}%</span>
             </div>
             <p className={`text-sm mt-1 ${scoreColor(result.overall)}`}>{scoreLabel(result.overall)}</p>
-            <div className="mt-2 rounded-xl border border-rose-300/20 bg-rose-500/10 px-2.5 py-1 overflow-hidden">
+            {/* <div className="mt-2 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 overflow-hidden">
               <div className="flex items-center justify-between gap-2 mb-0.5">
-                <span className="text-rose-100/70 text-xs font-semibold uppercase tracking-wide">Roses</span>
-                <span className="text-rose-100/55 text-xs tabular-nums">{roseCount}/5</span>
+                <span className="text-white/60 text-xs font-semibold uppercase tracking-wide">Score</span>
               </div>
               <div className="flex items-end justify-center gap-1 min-h-6">
                 {Array.from({ length: 5 }).map((_, index) => {
-                  const earned = index < roseCount
+                  const earned = false
                   return (
                     <span
                       key={index}
-                      className={`rose-reward ${earned ? 'rose-reward-earned' : 'rose-reward-empty'}`}
+                      className={`${earned ? '' : ''}`}
                       style={{ animationDelay: earned ? `${index * 0.32}s` : '0s' }}
                       aria-hidden="true"
                     >
@@ -1558,11 +1601,10 @@ function PronunciationPractice({
                   )
                 })}
               </div>
-            </div>
+            </div> */}
             {!compact && <p className="text-white/40 text-xs mt-1">Tap each sound for details</p>}
           </div>
-        )
-      })()}
+      )}
 
         {/* Nút điều khiển */}
       <div className={`px-4 pb-4 mt-auto flex flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
@@ -1888,8 +1930,36 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
   )
 }
 
-function PracticeWordScreen({ word, meaning, emoji, lang, prebuiltPhonemes, strictLookup = false, detail = null, onBack, onHome, onLibrary, onDictionary, onNext, onPrev, onSearchWord, voiceControlEnabled, onVoiceControlChange, practiceSettings, recordingDurationSetting }) {
-  const practiceDetail = detail || getUsefulWordDetail(word) || buildTranslateFallbackDetail(word, meaning)
+function PracticeWordScreen({ word, meaning, emoji, lang, prebuiltPhonemes, strictLookup = false, detail = null, onBack, onHome, onLibrary, onDictionary, onNext, onPrev, onSearchWord, onScoreResult, voiceControlEnabled, onVoiceControlChange, practiceSettings, recordingDurationSetting }) {
+  const [supabaseDetail, setSupabaseDetail] = useState(null)
+  const [supabaseMeaning, setSupabaseMeaning] = useState(null)
+  const [supabasePhonemes, setSupabasePhonemes] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setSupabaseDetail(null)
+    setSupabaseMeaning(null)
+    setSupabasePhonemes(null)
+    getWordByText(word)
+      .then(row => {
+        if (cancelled || !row) return
+        const entry = supabaseWordToEntry(row)
+        const nextDetail = buildSupabaseWordDetail(entry)
+        const nextMeaning = row.vietnamese_definition || null
+        const nextPhonemes = row.ipa ? phonemesFromSupabaseIpa(row.ipa) : null
+        if (nextMeaning || row.ipa) {
+          setSupabaseDetail(nextDetail)
+          setSupabaseMeaning(nextMeaning)
+          setSupabasePhonemes(nextPhonemes)
+        }
+      })
+      .catch(err => console.warn('[Supabase] word fetch failed:', err.message))
+    return () => { cancelled = true }
+  }, [word])
+
+  const effectiveMeaning = supabaseMeaning || meaning
+  const practiceDetail = supabaseDetail || detail || buildTranslateFallbackDetail(word, effectiveMeaning)
+  const effectivePhonemes = (lang === 'en-US' ? supabasePhonemes : null) || prebuiltPhonemes
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
       <div className="px-4 pt-6 pb-2 flex items-center gap-3">
@@ -1898,7 +1968,7 @@ function PracticeWordScreen({ word, meaning, emoji, lang, prebuiltPhonemes, stri
         </button>
         <span className="text-white/50 text-sm">Pronunciation Practice</span>
       </div>
-      <PronunciationPractice key={word} word={word} meaning={meaning} emoji={emoji} lang={lang} prebuiltPhonemes={prebuiltPhonemes} strictLookup={strictLookup} detail={practiceDetail} onBack={onBack} onHome={onHome} onLibrary={onLibrary} onDictionary={onDictionary} onNext={onNext} onPrev={onPrev} onSearchWord={onSearchWord} voiceControlEnabled={voiceControlEnabled} onVoiceControlChange={onVoiceControlChange} practiceSettings={practiceSettings} recordingDurationSetting={recordingDurationSetting} />
+      <PronunciationPractice key={word} word={word} meaning={effectiveMeaning} emoji={emoji} lang={lang} prebuiltPhonemes={effectivePhonemes} strictLookup={strictLookup} detail={practiceDetail} onBack={onBack} onHome={onHome} onLibrary={onLibrary} onDictionary={onDictionary} onNext={onNext} onPrev={onPrev} onSearchWord={onSearchWord} onScoreResult={onScoreResult} voiceControlEnabled={voiceControlEnabled} onVoiceControlChange={onVoiceControlChange} practiceSettings={practiceSettings} recordingDurationSetting={recordingDurationSetting} />
     </div>
   )
 }
@@ -1943,13 +2013,6 @@ function isUsefulWordMeaning(item) {
     && !/^A common English /i.test(definition)
 }
 
-function getUsefulWordDetail(word) {
-  const raw = COMMON_3000_DETAIL_MAP[word.toLowerCase()]
-  if (!raw?.meanings?.length) return null
-  const meanings = raw.meanings.filter(isUsefulWordMeaning)
-  return meanings.length > 0 ? { ...raw, meanings } : null
-}
-
 function buildTranslateFallbackDetail(word, meaning = '') {
   const cleanMeaning = meaning && !/^\d+\/\d+/.test(meaning) ? meaning : 'Google Translate available'
   return {
@@ -1974,13 +2037,59 @@ function buildTranslateFallbackDetail(word, meaning = '') {
   }
 }
 
-function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, onPracticeActiveChange = null, practiceSettings, recordingDurationSetting }) {
+function supabaseWordToEntry(row) {
+  return {
+    id: row.id,
+    word: row.word,
+    level: row.level || row.categories?.level || 'A1',
+    pos: row.type || 'other',
+    categoryId: row.category_id || null,
+    categoryName: row.categories?.name || null,
+    ipa: row.ipa || null,
+    meaningVi: row.vietnamese_definition || '',
+    exampleEn: row.example_sentence || '',
+    rootWord: row.root_word || '',
+    familyWords: row.family_words || [],
+    synonyms: row.synonyms || [],
+    antonyms: row.antonyms || [],
+    sourceRow: row,
+  }
+}
+
+function buildSupabaseWordDetail(entry) {
+  return {
+    word: entry.word,
+    level: entry.level,
+    ipa: entry.ipa || null,
+    meanings: [
+      {
+        pos: entry.pos || 'word',
+        definitionEn: entry.categoryName ? `Category: ${entry.categoryName}` : '',
+        meaningVi: entry.meaningVi || 'Google Translate available',
+        exampleEn: entry.exampleEn || `I can say "${entry.word}" clearly.`,
+        exampleVi: '',
+      },
+    ],
+    relations: {
+      family: uniqueList([entry.rootWord, ...(entry.familyWords || [])]).slice(0, 8),
+      synonyms: uniqueList(entry.synonyms || []).slice(0, 8),
+      antonyms: uniqueList(entry.antonyms || []).slice(0, 8),
+    },
+  }
+}
+
+function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, onPracticeActiveChange = null, practiceSettings, recordingDurationSetting, learnedCommonWords, commonWordScores, onToggleCommonLearned, onPronunciationResult }) {
   const [query, setQuery] = useState('')
   const [commonQuery, setCommonQuery] = useState('')
   const [commonLevel, setCommonLevel] = useState('all')
+  const [commonCategory, setCommonCategory] = useState('all')
   const [commonLearnedFilter, setCommonLearnedFilter] = useState('all')
-  const [learnedCommonWords, setLearnedCommonWords] = useState(() => loadLearnedCommonWords())
-  const [commonWordScores, setCommonWordScores] = useState(() => loadCommonWordScores())
+  const [supabaseWords, setSupabaseWords] = useState([])
+  const [supabaseCategories, setSupabaseCategories] = useState([])
+  const [supabaseLoading, setSupabaseLoading] = useState(true)
+  const [supabaseError, setSupabaseError] = useState(null)
+  const learnedWords = learnedCommonWords || loadLearnedCommonWords()
+  const wordScores = commonWordScores || loadCommonWordScores()
   const [expandedCommonWords, setExpandedCommonWords] = useState(() => new Set())
   const [commonTranslations, setCommonTranslations] = useState({})
   const [activeWord, setActiveWord] = useState(null)
@@ -1989,11 +2098,42 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
     onPracticeActiveChange?.(Boolean(activeWord))
     return () => onPracticeActiveChange?.(false)
   }, [activeWord, onPracticeActiveChange])
+  useEffect(() => {
+    listCategories()
+      .then(setSupabaseCategories)
+      .catch(err => setSupabaseError(err.message))
+  }, [])
+  useEffect(() => {
+    let cancelled = false
+    setSupabaseLoading(true)
+    setSupabaseError(null)
+    const timer = setTimeout(() => {
+      listWords({
+        query: commonQuery,
+        level: commonLevel,
+        categoryId: commonCategory,
+        limit: 5000,
+      })
+        .then(rows => {
+          if (!cancelled) setSupabaseWords(rows.map(supabaseWordToEntry))
+        })
+        .catch(err => {
+          if (!cancelled) setSupabaseError(err.message)
+        })
+        .finally(() => {
+          if (!cancelled) setSupabaseLoading(false)
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [commonQuery, commonLevel, commonCategory])
   const openWord = (word, meta = {}) => {
     const w = word.trim().toLowerCase()
-    const usefulDetail = meta.detail || getUsefulWordDetail(w)
-    const fallbackDetail = usefulDetail || buildTranslateFallbackDetail(w, meta.meaning)
-    const firstMeaning = usefulDetail?.meanings?.find(item => item.pos !== 'translate')
+    const fallbackDetail = meta.detail || buildTranslateFallbackDetail(w, meta.meaning)
+    const firstMeaning = fallbackDetail?.meanings?.find(item => item.pos !== 'translate')
     if (w) setActiveWord({
       word: w,
       meaning: meta.meaning || firstMeaning?.meaningVi || 'Google Translate available',
@@ -2007,31 +2147,39 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
     })
   }
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault()
-    openWord(query)
+    const term = query.trim()
+    if (!term) return
+    setSupabaseError(null)
+    try {
+      const rows = await listWords({ query: term, limit: 1 })
+      const entry = rows[0] ? supabaseWordToEntry(rows[0]) : null
+      if (entry) {
+        const detail = buildSupabaseWordDetail(entry)
+        openWord(entry.word, {
+          meaning: detail.meanings?.[0]?.meaningVi || entry.meaningVi,
+          emoji: '📚',
+          strictLookup: true,
+          source: 'common',
+          entry,
+          detail,
+          commonList: [entry],
+          commonIndex: 0,
+        })
+      } else {
+        setCommonQuery(term)
+        setSupabaseError(`Không tìm thấy "${term}" trong Supabase.`)
+      }
+    } catch (err) {
+      setSupabaseError(err.message)
+    }
   }
 
   const toggleCommonLearned = (word, score = null) => {
     const key = word.toLowerCase()
-    setLearnedCommonWords(prev => {
-      const next = new Set(prev)
-      const willLearn = !next.has(key)
-      if (willLearn) next.add(key)
-      else next.delete(key)
-      saveLearnedCommonWords(next)
-      setCommonWordScores(prevScores => {
-        const nextScores = { ...prevScores }
-        if (willLearn && Number.isFinite(score)) {
-          nextScores[key] = Math.round(score)
-        } else if (!willLearn) {
-          delete nextScores[key]
-        }
-        saveCommonWordScores(nextScores)
-        return nextScores
-      })
-      return next
-    })
+    const willLearn = !learnedWords.has(key)
+    onToggleCommonLearned?.(word, willLearn, score)
   }
 
   const toggleCommonDetail = (word) => {
@@ -2055,32 +2203,27 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
     }
   }
 
-  const normalizedCommonQuery = commonQuery.trim().toLowerCase()
-  const levelScopedCommonWords = COMMON_3000_WORDS.filter(entry => {
-    const levelMatch = commonLevel === 'all' || entry.level === commonLevel
-    const queryMatch = !normalizedCommonQuery || entry.word.toLowerCase().includes(normalizedCommonQuery)
-    return levelMatch && queryMatch
-  })
+  const levelScopedCommonWords = supabaseWords
   const filteredCommonWords = levelScopedCommonWords.filter(entry => {
-    const isLearned = learnedCommonWords.has(entry.word.toLowerCase())
+    const isLearned = learnedWords.has(entry.word.toLowerCase())
     return commonLearnedFilter === 'all'
       || (commonLearnedFilter === 'learned' && isLearned)
       || (commonLearnedFilter === 'unlearned' && !isLearned)
   })
-  const scopedLearnedCount = levelScopedCommonWords.filter(entry => learnedCommonWords.has(entry.word.toLowerCase())).length
+  const scopedLearnedCount = levelScopedCommonWords.filter(entry => learnedWords.has(entry.word.toLowerCase())).length
   const scopedUnlearnedCount = Math.max(0, levelScopedCommonWords.length - scopedLearnedCount)
 
   if (activeWord) {
     const isCommonWord = activeWord.source === 'common'
-    const isLearned = learnedCommonWords.has(activeWord.word)
+    const isLearned = learnedWords.has(activeWord.word)
     const commonList = activeWord.commonList || []
     const commonIndex = activeWord.commonIndex ?? -1
     const commonEntry = activeWord.entry || commonList[commonIndex] || null
-    const commonDetail = activeWord.detail || getUsefulWordDetail(activeWord.word) || buildTranslateFallbackDetail(activeWord.word, activeWord.meaning)
+    const commonDetail = activeWord.detail || buildTranslateFallbackDetail(activeWord.word, activeWord.meaning)
     const openCommonAt = (nextIndex) => {
       const nextEntry = commonList[nextIndex]
       if (!nextEntry) return
-      const nextDetail = getUsefulWordDetail(nextEntry.word.toLowerCase()) || buildTranslateFallbackDetail(nextEntry.word, `${nextEntry.level} · ${nextEntry.pos}`)
+      const nextDetail = nextEntry.detail || buildSupabaseWordDetail(nextEntry)
       openWord(nextEntry.word, {
         meaning: nextDetail.meanings?.[0]?.meaningVi || `${nextEntry.level} · ${nextEntry.pos}`,
         emoji: '📚',
@@ -2095,7 +2238,7 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
     const findCommonNavIndex = (direction) => {
       if (!isCommonWord || commonIndex < 0) return -1
       for (let i = commonIndex + direction; i >= 0 && i < commonList.length; i += direction) {
-        if (!practiceSettings.unlearnedNavOnly || !learnedCommonWords.has(commonList[i].word.toLowerCase())) return i
+        if (!practiceSettings.unlearnedNavOnly || !learnedWords.has(commonList[i].word.toLowerCase())) return i
       }
       return -1
     }
@@ -2115,7 +2258,8 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
         <PronunciationPractice
           key={activeWord.word}
           word={activeWord.word}
-          meaning={isCommonWord ? `${commonIndex + 1}/${commonList.length}${commonEntry ? ` · ${commonEntry.level} · ${commonEntry.pos}` : ''}` : activeWord.meaning}
+          meaning={activeWord.meaning}
+          metaLine={isCommonWord ? `${commonIndex + 1}/${commonList.length}${commonEntry ? ` · ${commonEntry.level} · ${commonEntry.pos}` : ''}` : null}
           emoji={activeWord.emoji}
           strictLookup={activeWord.strictLookup}
           compact={isCommonWord}
@@ -2131,6 +2275,12 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
           onPrev={onPrevCommon}
           onNext={onNextCommon}
           onSearchWord={openWord}
+          onScoreResult={(result) => onPronunciationResult?.(activeWord.word, result, {
+            meaning: commonDetail?.meanings?.find(item => item.pos !== 'translate')?.meaningVi || activeWord.meaning,
+            level: commonEntry?.level || null,
+            pos: commonEntry?.pos || null,
+            source: activeWord.source || 'dictionary',
+          })}
           voiceControlEnabled={voiceControlEnabled}
           onVoiceControlChange={onVoiceControlChange}
           practiceSettings={practiceSettings}
@@ -2167,8 +2317,8 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
       <div className="px-4">
         <div className="flex items-end justify-between gap-3 mb-3">
           <div>
-            <h2 className="text-white font-semibold">3000 từ thông dụng</h2>
-            <p className="text-white/40 text-xs">{COMMON_3000_WORDS.length} từ A1-B2 để luyện phát âm</p>
+            <h2 className="text-white font-semibold">Supabase Vocabulary</h2>
+            <p className="text-white/40 text-xs">Dữ liệu từ bảng words/categories</p>
           </div>
           <div className="text-white/35 text-xs shrink-0">{filteredCommonWords.length} từ</div>
         </div>
@@ -2178,7 +2328,7 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
           <input
             value={commonQuery}
             onChange={e => setCommonQuery(e.target.value)}
-            placeholder="Tìm trong 3000 từ..."
+            placeholder="Tìm từ trong Supabase..."
             className="w-full bg-white/5 border border-white/10 rounded-2xl pl-9 pr-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30 text-sm"
           />
         </div>
@@ -2196,10 +2346,35 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
               onClick={() => setCommonLevel(level)}
               className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${commonLevel === level ? 'bg-white text-gray-950 border-white' : 'bg-white/5 text-white/60 border-white/10'}`}
             >
-              {level} · {COMMON_3000_COUNTS[level]}
+              {level}
             </button>
           ))}
         </div>
+
+        <select
+          value={commonCategory}
+          onChange={e => setCommonCategory(e.target.value)}
+          className="w-full mb-3 bg-white/5 border border-white/10 rounded-2xl px-3 py-3 text-white focus:outline-none focus:border-white/30 text-sm"
+        >
+          <option value="all">Tất cả chủ đề</option>
+          {supabaseCategories.map(category => (
+            <option key={category.id} value={category.id}>
+              {category.level ? `${category.level} · ` : ''}{category.name}
+            </option>
+          ))}
+        </select>
+
+        {supabaseError && (
+          <div className="mb-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-red-100 text-sm">
+            Supabase error: {supabaseError}
+          </div>
+        )}
+
+        {supabaseLoading && (
+          <div className="mb-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/50 text-sm">
+            Đang tải từ Supabase...
+          </div>
+        )}
 
         <div className="flex gap-2 overflow-x-auto pb-3">
           {[
@@ -2220,9 +2395,9 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
         <div className="flex flex-col gap-2">
           {filteredCommonWords.map((entry, index) => {
             const key = entry.word.toLowerCase()
-            const isLearned = learnedCommonWords.has(entry.word.toLowerCase())
-            const savedScore = commonWordScores[entry.word.toLowerCase()]
-            const detail = getUsefulWordDetail(entry.word) || buildTranslateFallbackDetail(entry.word, `${entry.level} · ${entry.pos}`)
+            const isLearned = learnedWords.has(entry.word.toLowerCase())
+            const savedScore = wordScores[entry.word.toLowerCase()]
+            const detail = buildSupabaseWordDetail(entry)
             const firstMeaning = detail?.meanings?.find(item => item.pos !== 'translate')
             const isExpanded = expandedCommonWords.has(key)
             const hasDetails = detail?.meanings?.length > 0
@@ -2230,7 +2405,7 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
             const listStructures = buildWordStructures(entry.word)
             return (
             <div
-              key={`${entry.level}-${entry.word}`}
+              key={entry.id || `${entry.level}-${entry.word}`}
               className={`min-w-0 border rounded-xl transition ${isLearned ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-white/5 border-white/10'}`}
             >
               <div className="flex items-stretch">
@@ -2250,6 +2425,7 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-white text-sm font-medium">{entry.word}</span>
+                    {entry.ipa && <span className="shrink-0 text-white/35 font-mono text-[11px]">/{entry.ipa}/</span>}
                     {isLearned && <span className="shrink-0 text-emerald-300 text-xs">✓</span>}
                     {Number.isFinite(savedScore) && (
                       <span className={`shrink-0 text-[10px] leading-none rounded px-1.5 py-1 border ${savedScore >= 85 ? 'text-emerald-200 border-emerald-400/30 bg-emerald-500/10' : savedScore >= 65 ? 'text-yellow-200 border-yellow-400/30 bg-yellow-500/10' : 'text-red-200 border-red-400/30 bg-red-500/10'}`}>
@@ -2260,6 +2436,7 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
                   </div>
                   <div className="text-white/35 text-xs mt-1">
                     {firstMeaning?.meaningVi || entry.pos}
+                    {entry.categoryName ? ` · ${entry.categoryName}` : ''}
                   </div>
                 </button>
                 {hasDetails && (
@@ -2298,6 +2475,20 @@ function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, o
                       )}
                     </div>
                   ))}
+                  {['family', 'synonyms', 'antonyms'].map(keyName => {
+                    const values = detail.relations?.[keyName] || []
+                    if (!values.length) return null
+                    return (
+                      <div key={keyName} className="border-t border-white/10 pt-2">
+                        <div className="text-emerald-300 font-semibold text-sm leading-snug capitalize">{keyName}</div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {values.map(value => (
+                            <span key={value} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/70 text-xs">{value}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
                   {listStructures.length > 0 && (
                     <div className="border-t border-white/10 pt-2">
                       <div className="text-emerald-300 font-semibold text-sm leading-snug">Collocations & Structures:</div>
@@ -2336,12 +2527,14 @@ function BottomNav({
   onRecordingDurationChange,
   practiceSettings,
   onPracticeSettingsChange,
+  canAdmin = false,
 }) {
   const items = [
     { label: 'Home',       icon: Home,     target: 'library',    active: screen === 'library' },
     { label: 'Library',    icon: Library,  target: 'library',    active: ['soundDetail', 'practiceWord'].includes(screen) },
     { label: 'Dictionary', icon: BookOpen, target: 'dictionary', active: screen === 'dictionary' },
   ]
+  if (canAdmin) items.push({ label: 'Admin', icon: Shield, target: 'admin', active: screen === 'admin' })
   const settingItems = [
     ['readNewWordAloud', 'Read aloud when a new word appears'],
     ['unlearnedNavOnly', 'Next/Back only unlearned words'],
@@ -2446,7 +2639,7 @@ function BottomNav({
 
 // ─── APP ──────────────────────────────────────────────────────────────────
 
-export default function App() {
+function MainApp({ profile }) {
   const [screen, setScreen] = useState('library')
   const [selectedSound, setSelectedSound] = useState(null)
   const [practiceWord, setPracticeWord] = useState(null)
@@ -2461,6 +2654,8 @@ export default function App() {
     const saved = localStorage.getItem('recordingDuration')
     return saved ? parseInt(saved, 10) : 3
   })
+  const [learnedCommonWords, setLearnedCommonWords] = useState(() => loadLearnedCommonWords())
+  const [commonWordScores, setCommonWordScores] = useState(() => loadCommonWordScores())
   const appSpeechRef = useRef(null)
 
   const azureCode = LANG_CONFIG[lang].azureCode
@@ -2484,6 +2679,60 @@ export default function App() {
     if (s === 'dictionary') setDictionaryScreenKey(prev => prev + 1)
   }
   const handleChangeLang = (l) => { setLang(l); setSelectedSound(null); setPracticeWord(null) }
+  const refreshProgress = useCallback(async () => {
+    const rows = await listMyProgress()
+    const learned = new Set()
+    const scores = {}
+    rows.forEach(row => {
+      const key = row.words?.word?.toLowerCase()
+      if (!key) return
+      if (row.is_learned) learned.add(key)
+      if (Number.isFinite(Number(row.last_score))) scores[key] = Math.round(Number(row.last_score))
+    })
+    setLearnedCommonWords(learned)
+    setCommonWordScores(scores)
+    saveLearnedCommonWords(learned)
+    saveCommonWordScores(scores)
+  }, [])
+
+  useEffect(() => {
+    refreshProgress().catch(err => console.warn('[Supabase] progress load failed:', err.message))
+  }, [refreshProgress])
+
+  const handleToggleCommonLearned = async (word, learned, score = null) => {
+    const key = word.toLowerCase()
+    setLearnedCommonWords(prev => {
+      const next = new Set(prev)
+      if (learned) next.add(key)
+      else next.delete(key)
+      saveLearnedCommonWords(next)
+      return next
+    })
+    setCommonWordScores(prev => {
+      const next = { ...prev }
+      if (learned && Number.isFinite(score)) next[key] = Math.round(score)
+      if (!learned) delete next[key]
+      saveCommonWordScores(next)
+      return next
+    })
+    try {
+      await setWordLearned(word, learned, score)
+      await refreshProgress()
+    } catch (err) {
+      console.warn('[Supabase] learned sync failed:', err.message)
+    }
+  }
+
+  const handlePronunciationResult = async (word, result, meta = {}) => {
+    const key = word.toLowerCase()
+    setCommonWordScores(prev => {
+      const next = { ...prev, [key]: Math.round(result?.overall ?? 0) }
+      saveCommonWordScores(next)
+      return next
+    })
+    await savePronunciationResult(word, result, meta)
+    await refreshProgress()
+  }
 
   const soundWords = selectedSound?.words || []
   const onNextWord = practiceWordIdx < soundWords.length - 1
@@ -2567,8 +2816,19 @@ export default function App() {
 
   return (
     <div className="max-w-md mx-auto bg-[#0f0f1a] min-h-screen relative">
+      <button
+        type="button"
+        onClick={() => supabase?.auth.signOut()}
+        className="fixed top-3 right-3 z-50 w-9 h-9 rounded-xl bg-gray-950/70 border border-white/10 text-white/55 flex items-center justify-center"
+        aria-label="Logout"
+      >
+        <LogOut size={16} />
+      </button>
       {screen === 'library' && (
         <SoundLibraryScreen lang={lang} onSelectSound={handleSelectSound} onGoDict={() => handleNavigate('dictionary')} onChangeLang={handleChangeLang} />
+      )}
+      {screen === 'admin' && (
+        <AdminScreen profile={profile} onBack={() => handleNavigate('library')} />
       )}
       {screen === 'soundDetail' && selectedSound && (
         <SoundDetailScreen sound={selectedSound} lang={lang} onBack={() => setScreen('library')} onPracticeWord={handlePracticeWord} />
@@ -2586,6 +2846,10 @@ export default function App() {
           onDictionary={() => handleNavigate('dictionary')}
           onNext={onNextWord}
           onPrev={onPrevWord}
+          onScoreResult={(result) => handlePronunciationResult(practiceWord.word, result, {
+            meaning: practiceWord.meaning,
+            source: 'sound-library',
+          })}
           voiceControlEnabled={voiceControlEnabled}
           onVoiceControlChange={setVoiceControlEnabled}
           practiceSettings={practiceSettings}
@@ -2593,7 +2857,19 @@ export default function App() {
         />
       )}
       {screen === 'dictionary' && (
-        <DictionaryScreen key={dictionaryScreenKey} onBack={() => handleNavigate('library')} voiceControlEnabled={voiceControlEnabled} onVoiceControlChange={setVoiceControlEnabled} onPracticeActiveChange={setDictionaryPracticeActive} practiceSettings={practiceSettings} recordingDurationSetting={recordingDurationSetting} />
+        <DictionaryScreen
+          key={dictionaryScreenKey}
+          onBack={() => handleNavigate('library')}
+          voiceControlEnabled={voiceControlEnabled}
+          onVoiceControlChange={setVoiceControlEnabled}
+          onPracticeActiveChange={setDictionaryPracticeActive}
+          practiceSettings={practiceSettings}
+          recordingDurationSetting={recordingDurationSetting}
+          learnedCommonWords={learnedCommonWords}
+          commonWordScores={commonWordScores}
+          onToggleCommonLearned={handleToggleCommonLearned}
+          onPronunciationResult={handlePronunciationResult}
+        />
       )}
       <BottomNav
         screen={screen}
@@ -2606,7 +2882,16 @@ export default function App() {
         onRecordingDurationChange={changeRecordingDurationSetting}
         practiceSettings={practiceSettings}
         onPracticeSettingsChange={setPracticeSettings}
+        canAdmin={profile?.role === 'admin'}
       />
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthGate>
+      {({ profile }) => <MainApp profile={profile} />}
+    </AuthGate>
   )
 }

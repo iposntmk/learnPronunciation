@@ -21,7 +21,7 @@ function showMobileUrl() {
         orig()
         const ip = getLocalIP()
         console.log(`\n  📱 \x1b[1m\x1b[36mĐiện thoại cùng WiFi:\x1b[0m`)
-        console.log(`     \x1b[4m\x1b[33mhttps://${ip}:5173/EnglishPronunciation/\x1b[0m\n`)
+        console.log(`     \x1b[4m\x1b[33mhttps://${ip}:5173/learnPronunciation/\x1b[0m\n`)
       }
     },
   }
