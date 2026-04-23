@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Mic, Volume2, Search, ChevronLeft, RotateCcw, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus } from 'lucide-react'
+import { Mic, Volume2, Search, ChevronLeft, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings } from 'lucide-react'
 import {
   SOUNDS, VOWEL_GROUPS, CONSONANT_GROUPS,
   SPANISH_SOUNDS, SPANISH_VOWEL_GROUPS, SPANISH_CONSONANT_GROUPS, SPANISH_PHONEME_INFO,
@@ -765,7 +765,7 @@ function getSupportedMimeType() {
 
 function scoreColor(s) { return s >= 85 ? 'text-emerald-400' : s >= 65 ? 'text-yellow-400' : 'text-red-400' }
 function scoreBg(s) { return s >= 85 ? 'bg-emerald-500/20 border-emerald-500/50' : s >= 65 ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-red-500/20 border-red-500/50' }
-function scoreLabel(s) { return s >= 90 ? 'Xuất sắc! 🎉' : s >= 75 ? 'Tốt lắm! 👍' : s >= 60 ? 'Gần đúng 💪' : 'Luyện thêm nhé 📚' }
+function scoreLabel(s) { return s >= 90 ? 'Excellent!' : s >= 75 ? 'Good job!' : s >= 60 ? 'Almost there' : 'Keep practicing' }
 function formatIpa(p) { return `${p.isStressed ? 'ˈ' : ''}${p.ipa}` }
 function googleTranslateApiUrl(text) {
   return `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(text)}`
@@ -798,45 +798,160 @@ function saveIncorrectWordReports(reports) {
   localStorage.setItem(INCORRECT_WORD_REPORTS_KEY, JSON.stringify(reports))
 }
 
-function playScoreFeedbackSound(score) {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext
-    if (!AudioCtx) return
-    const ctx = new AudioCtx()
-    const master = ctx.createGain()
-    master.gain.setValueAtTime(0.0001, ctx.currentTime)
-    master.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.02)
-    master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.65)
-    master.connect(ctx.destination)
+function scoreRoseCount(score) {
+  return Math.max(0, Math.min(5, Math.round(score / 20)))
+}
 
-    const notes = score >= 90
-      ? [523.25, 659.25, 783.99, 1046.5]
-      : score >= 75
-        ? [440, 554.37, 659.25]
-        : score >= 60
-          ? [392, 440]
-          : [220, 196]
-
-    notes.forEach((freq, index) => {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      const start = ctx.currentTime + index * 0.11
-      const end = start + (score >= 60 ? 0.16 : 0.22)
-      osc.type = score >= 60 ? 'sine' : 'triangle'
-      osc.frequency.setValueAtTime(freq, start)
-      gain.gain.setValueAtTime(0.0001, start)
-      gain.gain.exponentialRampToValueAtTime(0.45, start + 0.015)
-      gain.gain.exponentialRampToValueAtTime(0.0001, end)
-      osc.connect(gain)
-      gain.connect(master)
-      osc.start(start)
-      osc.stop(end + 0.02)
+function uniqueList(items) {
+  const seen = new Set()
+  return items
+    .map(item => String(item || '').trim())
+    .filter(item => {
+      const key = item.toLowerCase()
+      if (!item || seen.has(key)) return false
+      seen.add(key)
+      return true
     })
+}
 
-    setTimeout(() => ctx.close().catch(() => {}), 900)
-  } catch {
-    // Feedback sound is non-critical; scoring should never fail because audio playback is blocked.
+const WORD_RELATION_OVERRIDES = {
+  good: { family: ['goodness'], synonyms: ['great', 'fine', 'excellent'], antonyms: ['bad', 'poor'] },
+  bad: { family: ['badly'], synonyms: ['poor', 'wrong'], antonyms: ['good', 'excellent'] },
+  happy: { family: ['happiness', 'happily'], synonyms: ['glad', 'pleased'], antonyms: ['sad', 'unhappy'] },
+  sad: { family: ['sadness', 'sadly'], synonyms: ['unhappy', 'upset'], antonyms: ['happy', 'glad'] },
+  fast: { family: ['faster', 'fastest'], synonyms: ['quick', 'rapid'], antonyms: ['slow'] },
+  slow: { family: ['slowly', 'slower'], synonyms: ['gradual'], antonyms: ['fast', 'quick'] },
+  easy: { family: ['easily'], synonyms: ['simple'], antonyms: ['difficult', 'hard'] },
+  difficult: { family: ['difficulty'], synonyms: ['hard', 'challenging'], antonyms: ['easy', 'simple'] },
+  big: { family: ['bigger', 'biggest'], synonyms: ['large', 'great'], antonyms: ['small', 'little'] },
+  small: { family: ['smaller', 'smallest'], synonyms: ['little', 'tiny'], antonyms: ['big', 'large'] },
+  hot: { family: ['heat', 'heated'], synonyms: ['warm'], antonyms: ['cold', 'cool'] },
+  cold: { family: ['coldly'], synonyms: ['cool', 'chilly'], antonyms: ['hot', 'warm'] },
+  clear: { family: ['clearly', 'clarity'], synonyms: ['obvious', 'clean'], antonyms: ['unclear', 'confusing'] },
+  speak: { family: ['speaker', 'speaking', 'speech'], synonyms: ['say', 'talk'], antonyms: ['listen', 'silence'] },
+  learn: { family: ['learner', 'learning', 'learned'], synonyms: ['study', 'practice'], antonyms: ['forget'] },
+  correct: { family: ['correction', 'correctly'], synonyms: ['right', 'accurate'], antonyms: ['wrong', 'incorrect'] },
+  wrong: { family: ['wrongly'], synonyms: ['incorrect'], antonyms: ['right', 'correct'] },
+  start: { family: ['starter', 'starting'], synonyms: ['begin'], antonyms: ['finish', 'end'] },
+  finish: { family: ['finished'], synonyms: ['end', 'complete'], antonyms: ['start', 'begin'] },
+}
+
+const WORD_STRUCTURE_OVERRIDES = {
+  access: [
+    'access to sth',
+    'have/get/gain access to sth',
+    'provide/give access to sth',
+    'access a file/database/system/account',
+  ],
+  suppose: [
+    'be supposed to do sth',
+    'suppose that + clause',
+    'I suppose so / I suppose not',
+  ],
+  supposed: [
+    'be supposed to do sth',
+    'be supposed to be + adj/noun',
+    'not be supposed to do sth',
+  ],
+  speak: [
+    'speak to sb',
+    'speak with sb',
+    'speak about sth',
+    'speak English clearly',
+  ],
+  listen: [
+    'listen to sb/sth',
+    'listen for sth',
+    'listen carefully',
+  ],
+  look: [
+    'look at sb/sth',
+    'look for sb/sth',
+    'look like sb/sth',
+  ],
+  depend: [
+    'depend on sb/sth',
+    'depend on sb to do sth',
+  ],
+  interested: [
+    'be interested in sth',
+    'be interested in doing sth',
+  ],
+  good: [
+    'be good at sth/doing sth',
+    'be good for sb/sth',
+    'be good to sb',
+  ],
+  afraid: [
+    'be afraid of sb/sth',
+    'be afraid to do sth',
+    'be afraid that + clause',
+  ],
+}
+
+function baseWordForms(word) {
+  const key = word.toLowerCase().trim()
+  const forms = new Set([key])
+  if (key.endsWith('ing') && key.length > 5) forms.add(key.slice(0, -3))
+  if (key.endsWith('ed') && key.length > 4) forms.add(key.slice(0, -2))
+  if (key.endsWith('ly') && key.length > 4) forms.add(key.slice(0, -2))
+  if (key.endsWith('ness') && key.length > 6) forms.add(key.slice(0, -4))
+  if (key.endsWith('s') && key.length > 3) forms.add(key.slice(0, -1))
+  return [...forms]
+}
+
+function findLocalWordFamily(word) {
+  const forms = baseWordForms(word)
+  const exact = word.toLowerCase().trim()
+  if (!exact || exact.includes(' ')) return []
+
+  return COMMON_3000_WORDS
+    .map(entry => entry.word)
+    .filter(candidate => {
+      const lower = candidate.toLowerCase()
+      return lower !== exact && forms.some(form => lower === form || lower.startsWith(form))
+    })
+    .slice(0, 6)
+}
+
+function buildWordRelations(word) {
+  const key = word.toLowerCase().trim()
+  const override = WORD_RELATION_OVERRIDES[key] || {}
+  const family = uniqueList([...(override.family || []), ...findLocalWordFamily(word)]).slice(0, 6)
+
+  return {
+    family,
+    synonyms: uniqueList(override.synonyms || []).slice(0, 5),
+    antonyms: uniqueList(override.antonyms || []).slice(0, 5),
   }
+}
+
+function buildWordStructures(word) {
+  const key = word.toLowerCase().trim()
+  const forms = baseWordForms(key)
+  return uniqueList(forms.flatMap(form => WORD_STRUCTURE_OVERRIDES[form] || [])).slice(0, 6)
+}
+
+const PRACTICE_SETTINGS_KEY = 'practiceSettings'
+const DEFAULT_PRACTICE_SETTINGS = {
+  readNewWordAloud: false,
+  unlearnedNavOnly: false,
+  autoTranslateOnLoad: false,
+  autoExpandUsage: false,
+}
+
+function loadPracticeSettings() {
+  try {
+    const raw = localStorage.getItem(PRACTICE_SETTINGS_KEY)
+    const parsed = raw ? JSON.parse(raw) : {}
+    return { ...DEFAULT_PRACTICE_SETTINGS, ...(parsed && typeof parsed === 'object' ? parsed : {}) }
+  } catch {
+    return DEFAULT_PRACTICE_SETTINGS
+  }
+}
+
+function savePracticeSettings(settings) {
+  localStorage.setItem(PRACTICE_SETTINGS_KEY, JSON.stringify(settings))
 }
 
 // ─── PRONUNCIATION PRACTICE (shared) ─────────────────────────────────────
@@ -853,9 +968,16 @@ function PronunciationPractice({
   learnedControl = null,
   detail = null,
   onBack,
+  onHome = null,
+  onLibrary = null,
+  onDictionary = null,
   onNext = null,
   onPrev = null,
   onSearchWord = null,
+  voiceControlEnabled = false,
+  onVoiceControlChange = null,
+  practiceSettings = DEFAULT_PRACTICE_SETTINGS,
+  recordingDurationSetting = null,
 }) {
   const [phonemes, setPhonemes] = useState(() => prebuiltPhonemes || lookupWord(word, { allowGuess: !strictLookup }))
   const [isResolvingPhonemes, setIsResolvingPhonemes] = useState(false)
@@ -865,11 +987,13 @@ function PronunciationPractice({
   const [phase, setPhase] = useState('ready')
   const [errorMsg, setErrorMsg] = useState(null)
   const [result, setResult] = useState(null)
+  const [animatedOverall, setAnimatedOverall] = useState(0)
   const [selectedIdx, setSelectedIdx] = useState(null)
   const [recordingUrl, setRecordingUrl] = useState(null)
   const [isPlayingBack, setIsPlayingBack] = useState(false)
   const [searchVal, setSearchVal] = useState('')
-  const [isMeaningExpanded, setIsMeaningExpanded] = useState(false)
+  const [isUsageExpanded, setIsUsageExpanded] = useState(false)
+  const [voiceStatus, setVoiceStatus] = useState('Touch-to-control mode.')
   const [incorrectReports, setIncorrectReports] = useState(() => loadIncorrectWordReports())
   const [translation, setTranslation] = useState({ word: '', text: '', loading: false, error: null })
   const [recordingDuration, setRecordingDuration] = useState(() => {
@@ -880,6 +1004,8 @@ function PronunciationPractice({
   const mrRef = useRef(null)
   const streamRef = useRef(null)
   const speechRef = useRef(null)
+  const shouldListenRef = useRef(false)
+  const voiceRestartRef = useRef(null)
   const audioRef = useRef(null)
   const timeoutRef = useRef(null)
   const countdownRef = useRef(null)
@@ -890,9 +1016,33 @@ function PronunciationPractice({
   }, [recordingUrl])
 
   useEffect(() => {
-    setIsMeaningExpanded(false)
+    if (Number.isFinite(recordingDurationSetting)) {
+      setRecordingDuration(recordingDurationSetting)
+    }
+  }, [recordingDurationSetting])
+
+  useEffect(() => {
+    setIsUsageExpanded(Boolean(practiceSettings.autoExpandUsage))
     setTranslation({ word, text: '', loading: false, error: null })
-  }, [word])
+  }, [practiceSettings.autoExpandUsage, word])
+
+  useEffect(() => {
+    if (!result) {
+      setAnimatedOverall(0)
+      return
+    }
+
+    setAnimatedOverall(0)
+    let timer = null
+    const frame = requestAnimationFrame(() => {
+      timer = setTimeout(() => setAnimatedOverall(result.overall), 80)
+    })
+
+    return () => {
+      cancelAnimationFrame(frame)
+      if (timer) clearTimeout(timer)
+    }
+  }, [result])
 
   useEffect(() => {
     let cancelled = false
@@ -933,16 +1083,16 @@ function PronunciationPractice({
         mr.onstop = async () => {
           clearInterval(countdownRef.current)
           stream.getTracks().forEach(t => t.stop())
-          if (chunks.length === 0) { setErrorMsg('Không ghi được âm thanh. Thử lại.'); setPhase('ready'); return }
+          if (chunks.length === 0) { setErrorMsg('No audio was recorded. Try again.'); setPhase('ready'); return }
           const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
           blobRef.current = blob
           setRecordingUrl(URL.createObjectURL(blob))
           setPhase('scoring')
           try {
             const data = await scoreWord(blob, phonemes, lang)
-            setResult(data); setPhase('result'); playScoreFeedbackSound(data.overall)
+            setResult(data); setPhase('result')
           } catch (err) {
-            setErrorMsg(`Lỗi chấm điểm: ${err.message}`); setPhase('ready')
+            setErrorMsg(`Scoring error: ${err.message}`); setPhase('ready')
           }
         }
         mr.start(100)
@@ -958,18 +1108,18 @@ function PronunciationPractice({
       .catch(err => {
         const isDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
         setErrorMsg(isDenied
-          ? 'Chưa cấp quyền microphone — nhấn icon 🔒 trên thanh địa chỉ và bật Microphone.'
-          : `Lỗi microphone: ${err.message}`)
+          ? 'Microphone permission is blocked. Enable Microphone from the lock icon in the address bar.'
+          : `Microphone error: ${err.message}`)
       })
   }, [phonemes, recordingDuration])
 
   const startRecording = useCallback(() => {
     if (isResolvingPhonemes) {
-      setErrorMsg('Đang tìm IPA cho từ này...')
+      setErrorMsg('Resolving IPA for this word...')
       return
     }
     if (!canScoreWord) {
-      setErrorMsg(lookupNote || 'Từ này chưa có IPA đủ tin cậy để chấm điểm.')
+      setErrorMsg(lookupNote || 'This word does not have a reliable IPA yet.')
       return
     }
     setRecordingUrl(null)
@@ -1019,7 +1169,7 @@ function PronunciationPractice({
     startBlobRecording()
   }, [startBlobRecording])
 
-  const playbackRecording = () => {
+  const playbackRecording = useCallback(() => {
     if (!recordingUrl || !audioRef.current) return
     if (isPlayingBack) {
       audioRef.current.pause(); audioRef.current.currentTime = 0; setIsPlayingBack(false); return
@@ -1027,13 +1177,15 @@ function PronunciationPractice({
     audioRef.current.src = recordingUrl
     audioRef.current.onended = () => setIsPlayingBack(false)
     audioRef.current.play().then(() => setIsPlayingBack(true)).catch(() => setIsPlayingBack(false))
-  }
+  }, [isPlayingBack, recordingUrl])
 
   const sel = selectedIdx !== null && result ? result.phonemes[selectedIdx] : null
   const hasNav = onPrev !== null || onNext !== null
   const detailMeanings = detail?.meanings || []
+  const usageMeanings = detailMeanings.filter(item => item.pos !== 'translate')
   const needsMachineTranslation = detailMeanings.length === 0 || detailMeanings.some(item => item.pos === 'translate')
-  const visibleDetailMeanings = isMeaningExpanded ? detailMeanings : detailMeanings.slice(0, 1)
+  const wordRelations = buildWordRelations(word)
+  const wordStructures = buildWordStructures(word)
   const wordReportKey = `${lang}:${word.toLowerCase()}`
   const isReportedIncorrect = Boolean(incorrectReports[wordReportKey])
   const toggleIncorrectReport = () => {
@@ -1065,13 +1217,178 @@ function PronunciationPractice({
   }, [word])
 
   useEffect(() => {
-    if (needsMachineTranslation) translateInApp()
-  }, [needsMachineTranslation, translateInApp])
+    if (practiceSettings.readNewWordAloud) {
+      const timer = setTimeout(() => speakNeural(word, lang), 250)
+      return () => clearTimeout(timer)
+    }
+  }, [lang, practiceSettings.readNewWordAloud, word])
+
+  const playModel = useCallback(() => {
+    if (voiceControlEnabled && speechRef.current) {
+      shouldListenRef.current = false
+      clearTimeout(voiceRestartRef.current)
+      speechRef.current.stop()
+      voiceRestartRef.current = setTimeout(() => {
+        shouldListenRef.current = voiceControlEnabled
+        if (voiceControlEnabled && phase !== 'recording') {
+          try { speechRef.current?.start?.() } catch {}
+        }
+      }, 1800)
+    }
+    speakNeural(word, lang)
+  }, [lang, phase, voiceControlEnabled, word])
+
+  const toggleLearnedControl = useCallback(() => {
+    if (!learnedControl) return
+    learnedControl.onToggle(result?.overall ?? null)
+  }, [learnedControl, result])
+
+  const markDone = useCallback(() => {
+    if (learnedControl) {
+      toggleLearnedControl()
+      return
+    }
+    if (onNext) onNext()
+    else if (onBack) onBack()
+  }, [learnedControl, onBack, onNext, toggleLearnedControl])
+
+  const completeVoiceCommand = useCallback((label) => {
+    setVoiceStatus(`Command: ${label}`)
+    shouldListenRef.current = false
+    clearTimeout(voiceRestartRef.current)
+    speechRef.current?.stop?.()
+    onVoiceControlChange?.(false)
+  }, [onVoiceControlChange])
+
+  const runVoiceCommand = useCallback((spoken) => {
+    const normalized = spoken.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim()
+    const words = new Set(normalized.split(' ').filter(Boolean))
+    const has = (...terms) => terms.some(term => words.has(term) || normalized.includes(term))
+
+    if (has('translate')) {
+      translateInApp()
+      completeVoiceCommand('Translate')
+      return
+    }
+    if (has('play')) {
+      playModel()
+      completeVoiceCommand('Play')
+      return
+    }
+    if (has('speak')) {
+      if (phase === 'ready') {
+        speechRef.current?.stop?.()
+        startRecording()
+      }
+      else if (phase === 'recording') stopRecording()
+      completeVoiceCommand('Speak')
+      return
+    }
+    if (has('retry', 'try again')) {
+      if (phase === 'result') resetAndRecord()
+      else reset()
+      completeVoiceCommand('Retry')
+      return
+    }
+    if (has('done')) {
+      markDone()
+      completeVoiceCommand('Done')
+      return
+    }
+    if (has('back')) {
+      const action = normalized.includes('go back') || !onPrev ? onBack : onPrev
+      if (action) {
+        action()
+        completeVoiceCommand('Back')
+      }
+      return
+    }
+    if (has('next')) {
+      if (onNext) {
+        onNext()
+        completeVoiceCommand('Next')
+      }
+      return
+    }
+    if (has('home')) {
+      if (onHome) {
+        onHome()
+        completeVoiceCommand('Home')
+      }
+      return
+    }
+    if (has('library')) {
+      if (onLibrary) {
+        onLibrary()
+        completeVoiceCommand('Library')
+      }
+      return
+    }
+    if (has('dictionary')) {
+      if (onDictionary) {
+        onDictionary()
+        completeVoiceCommand('Dictionary')
+      }
+    }
+  }, [completeVoiceCommand, markDone, onBack, onDictionary, onHome, onLibrary, onNext, onPrev, phase, playModel, resetAndRecord, startRecording, translateInApp])
+
+  useEffect(() => {
+    shouldListenRef.current = voiceControlEnabled
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+
+    if (!voiceControlEnabled) {
+      speechRef.current?.stop?.()
+      speechRef.current = null
+      setVoiceStatus('Touch-to-control mode.')
+      return
+    }
+
+    if (!SpeechRecognition) {
+      setVoiceStatus('Voice control is not supported in this browser.')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    let stopped = false
+    recognition.continuous = true
+    recognition.interimResults = false
+    recognition.lang = 'en-US'
+    recognition.onstart = () => setVoiceStatus('Listening for English commands...')
+    recognition.onerror = (event) => {
+      setVoiceStatus(event.error === 'not-allowed' ? 'Microphone permission is blocked.' : `Voice control error: ${event.error}`)
+    }
+    recognition.onend = () => {
+      if (shouldListenRef.current && phase !== 'recording') {
+        try { recognition.start() } catch {}
+      }
+    }
+    recognition.onresult = (event) => {
+      const last = event.results[event.results.length - 1]
+      const transcript = last?.[0]?.transcript || ''
+      if (transcript) runVoiceCommand(transcript)
+    }
+
+    speechRef.current = recognition
+    if (phase !== 'recording') {
+      try { recognition.start() } catch {}
+    }
+
+    return () => {
+      clearTimeout(voiceRestartRef.current)
+      shouldListenRef.current = false
+      recognition.onend = null
+      recognition.stop()
+    }
+  }, [phase, runVoiceCommand, voiceControlEnabled])
+
+  useEffect(() => {
+    if (needsMachineTranslation || practiceSettings.autoTranslateOnLoad) translateInApp()
+  }, [needsMachineTranslation, practiceSettings.autoTranslateOnLoad, translateInApp])
 
   const navButtons = hasNav ? (
     <div className="flex flex-col gap-2.5 pt-1">
-      <button onClick={onPrev} disabled={!onPrev} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onPrev ? 'bg-amber-500/20 border-amber-400/40 text-amber-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>‹ Từ trước</button>
-      <button onClick={onNext} disabled={!onNext} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onNext ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>Từ sau ›</button>
+      <button onClick={onPrev} disabled={!onPrev} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onPrev ? 'bg-amber-500/20 border-amber-400/40 text-amber-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>‹ Back</button>
+      <button onClick={onNext} disabled={!onNext} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onNext ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>Next ›</button>
     </div>
   ) : null
 
@@ -1083,7 +1400,7 @@ function PronunciationPractice({
       <div className={`text-center px-4 ${compact ? 'py-1' : 'py-6'}`}>
         <div className={`${compact ? 'hidden' : 'text-5xl mb-2'}`}>{emoji}</div>
         <div className="flex flex-wrap items-center justify-center gap-2">
-          <button onClick={() => speakNeural(word, lang)} className={`${compact ? 'text-4xl' : 'text-5xl'} font-extrabold text-white hover:text-blue-300 transition-colors flex items-center gap-2 leading-tight`}>
+          <button onClick={playModel} className={`${compact ? 'text-4xl' : 'text-5xl'} font-extrabold text-white hover:text-blue-300 transition-colors flex items-center gap-2 leading-tight`}>
             {word}
             <Volume2 size={compact ? 24 : 28} className="text-white/55" />
           </button>
@@ -1106,46 +1423,61 @@ function PronunciationPractice({
             disabled={translation.loading}
             className="shrink-0 rounded-xl bg-cyan-500/15 border border-cyan-400/30 text-cyan-100 px-2.5 py-1 text-xs font-semibold active:scale-95"
           >
-            {translation.loading ? 'Đang dịch' : 'Dịch'}
+            {translation.loading ? 'Translating' : 'Translate'}
           </button>
         </div>
 
         {(translation.loading || translation.text || translation.error) && (
-          <div className="mt-2 mx-auto max-w-xl rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-left">
-            <div className="text-cyan-100/60 text-[11px] font-semibold uppercase tracking-wide">Dịch tiếng Việt</div>
-            {translation.loading && <div className="text-cyan-100/70 text-sm mt-0.5">Đang dịch trong app...</div>}
-            {translation.text && <div className="text-cyan-50 text-base font-semibold leading-snug mt-0.5">{translation.text}</div>}
+          <div className="mt-2 mx-auto max-w-xl rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2.5 text-left">
+            {translation.loading && <div className="text-cyan-100/70 text-sm">Translating...</div>}
+            {translation.text && <div className="text-cyan-50 text-sm leading-snug"><span className="text-cyan-200/80 font-semibold">Google Translate:</span> {translation.text}</div>}
             {translation.error && <div className="text-red-200 text-sm mt-0.5">{translation.error}</div>}
           </div>
         )}
 
-        {detailMeanings.length > 0 && (
-          <div className={`${compact ? 'mt-1 px-2 py-1.5' : 'mt-3 px-3 py-2.5'} text-left bg-white/5 border border-white/10 rounded-xl`}>
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-white/45 text-xs font-semibold uppercase tracking-wide">Nghĩa & ví dụ</span>
-              {detailMeanings.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setIsMeaningExpanded(prev => !prev)}
-                  className="w-7 h-7 rounded-lg bg-white/10 border border-white/10 text-white/70 flex items-center justify-center active:scale-95 transition-transform"
-                  aria-label={isMeaningExpanded ? 'Thu gọn nghĩa và ví dụ' : 'Mở rộng nghĩa và ví dụ'}
-                >
-                  {isMeaningExpanded ? <Minus size={15} /> : <Plus size={15} />}
-                </button>
-              )}
+        {usageMeanings.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setIsUsageExpanded(prev => !prev)}
+            className={`block w-full ${compact ? 'mt-1' : 'mt-3'} text-left bg-white/5 border border-white/10 rounded-xl overflow-hidden active:bg-white/10 transition-colors`}
+            aria-expanded={isUsageExpanded}
+          >
+            <div
+              className={`w-full ${compact ? 'px-2 py-1.5' : 'px-3 py-2.5'} flex items-center justify-between gap-2 active:bg-white/10 transition-colors`}
+            >
+              <span className="text-white/55 text-xs font-semibold uppercase tracking-wide">Usage</span>
+              <span className="text-white/45 text-xs">{isUsageExpanded ? 'Close' : 'Expand'}</span>
             </div>
-            <div className="flex flex-col gap-1.5">
-              {visibleDetailMeanings.map((item, idx) => (
-                <div key={`${word}-${item.pos}-${idx}`} className="min-w-0">
-                  <div className="flex items-start gap-2 min-w-0">
-                    <span className="shrink-0 text-[11px] uppercase tracking-wide text-emerald-300 border border-emerald-400/25 rounded px-1.5 py-0.5">{item.pos}</span>
-                    <span className="text-white/85 text-sm leading-snug">{item.meaningVi}</span>
+            {isUsageExpanded && (
+              <div className={`${compact ? 'px-2 pb-1.5' : 'px-3 pb-2.5'} flex flex-col gap-1.5`}>
+                {usageMeanings.map((item, idx) => (
+                  <div key={`${word}-${item.pos}-${idx}`} className="min-w-0 text-sm leading-snug border-b border-white/10 last:border-b-0 pb-1.5 last:pb-0">
+                    <div className="text-emerald-300 font-semibold capitalize">{item.pos}</div>
+                    <div><span className="text-emerald-300 font-semibold">Meaning:</span> <span className="text-white/85">{item.meaningVi}</span></div>
+                    <div className="mt-1"><span className="text-emerald-300 font-semibold">Example:</span> <span className="text-white/75">{item.exampleEn}</span></div>
+                    <div className="text-white/50">{item.exampleVi}</div>
                   </div>
-                  <div className="text-white/50 text-sm leading-snug">{item.exampleEn} · {item.exampleVi}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+                ))}
+                {wordStructures.length > 0 && (
+                  <div className="border-t border-white/10 pt-1.5 mt-1 text-sm leading-snug">
+                    <div className="text-emerald-300 font-semibold">Collocations & Structures:</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {wordStructures.map(pattern => (
+                        <span key={pattern} className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-white/75">{pattern}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(wordRelations.family.length > 0 || wordRelations.synonyms.length > 0 || wordRelations.antonyms.length > 0) && (
+                  <div className="border-t border-white/10 pt-1.5 mt-1 grid gap-1 text-sm leading-snug">
+                    {wordRelations.family.length > 0 && <div><span className="text-emerald-300 font-semibold">Word Family:</span> <span className="text-white/75">{wordRelations.family.join(', ')}</span></div>}
+                    {wordRelations.synonyms.length > 0 && <div><span className="text-emerald-300 font-semibold">Synonyms:</span> <span className="text-white/75">{wordRelations.synonyms.join(', ')}</span></div>}
+                    {wordRelations.antonyms.length > 0 && <div><span className="text-emerald-300 font-semibold">Antonyms:</span> <span className="text-white/75">{wordRelations.antonyms.join(', ')}</span></div>}
+                  </div>
+                )}
+              </div>
+            )}
+          </button>
         )}
 
         <div className={`flex flex-nowrap justify-start gap-1 overflow-x-auto pb-1 ${compact ? 'mt-1' : 'mt-4'}`}>
@@ -1177,7 +1509,7 @@ function PronunciationPractice({
                   <button onClick={() => playPhoneme(sel)}
                     className="flex items-center gap-1 bg-white/10 hover:bg-white/20 rounded-lg px-2 py-1 text-white/70 text-xs active:scale-95 transition-transform">
                     <Play size={11} className="fill-white/70 text-white/70" />
-                    Bạn nói
+                    You
                   </button>
                 )}
                 <span className={`font-bold ${scoreColor(sel.score)}`}>{sel.score}%</span>
@@ -1191,27 +1523,54 @@ function PronunciationPractice({
 
       {/* Kết quả tổng */}
       {result && (() => {
+        const roseCount = scoreRoseCount(result.overall)
         return (
           <div className="mx-4 mb-1 rounded-xl p-2 border bg-white/5 border-white/10">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-white/60 text-sm">Kết quả:</span>
-              <span className="text-white/40 text-sm">Từ: "{result.spokenWord || '—'}"</span>
+              <span className="text-white/60 text-sm">Result:</span>
+              <span className="text-white/40 text-sm">Word: "{result.spokenWord || '—'}"</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex-1 h-3 bg-white/10 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all duration-700 ${result.overall >= 85 ? 'bg-emerald-400' : result.overall >= 65 ? 'bg-yellow-400' : 'bg-red-400'}`}
-                  style={{ width: `${result.overall}%` }} />
+                <div className={`h-full rounded-full transition-all duration-700 ease-out ${result.overall >= 85 ? 'bg-emerald-400' : result.overall >= 65 ? 'bg-yellow-400' : 'bg-red-400'}`}
+                  style={{ width: `${animatedOverall}%` }} />
               </div>
               <span className={`font-bold text-lg ${scoreColor(result.overall)}`}>{result.overall}%</span>
             </div>
             <p className={`text-sm mt-1 ${scoreColor(result.overall)}`}>{scoreLabel(result.overall)}</p>
-            {!compact && <p className="text-white/40 text-xs mt-1">Nhấn vào từng âm để xem chi tiết</p>}
+            <div className="mt-2 rounded-xl border border-rose-300/20 bg-rose-500/10 px-2.5 py-1 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className="text-rose-100/70 text-xs font-semibold uppercase tracking-wide">Roses</span>
+                <span className="text-rose-100/55 text-xs tabular-nums">{roseCount}/5</span>
+              </div>
+              <div className="flex items-end justify-center gap-1 min-h-6">
+                {Array.from({ length: 5 }).map((_, index) => {
+                  const earned = index < roseCount
+                  return (
+                    <span
+                      key={index}
+                      className={`rose-reward ${earned ? 'rose-reward-earned' : 'rose-reward-empty'}`}
+                      style={{ animationDelay: earned ? `${index * 0.32}s` : '0s' }}
+                      aria-hidden="true"
+                    >
+                      🌹
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+            {!compact && <p className="text-white/40 text-xs mt-1">Tap each sound for details</p>}
           </div>
         )
       })()}
 
-      {/* Nút điều khiển */}
+        {/* Nút điều khiển */}
       <div className={`px-4 pb-4 mt-auto flex flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
+
+        {voiceControlEnabled && (
+          <div className="text-xs px-1 text-emerald-200/70">{voiceStatus}</div>
+        )}
+
 
         {errorMsg && (
           <div className="bg-red-500/15 border border-red-500/40 rounded-2xl px-4 py-3 flex items-start gap-3">
@@ -1229,15 +1588,15 @@ function PronunciationPractice({
         {isResolvingPhonemes && phase === 'ready' && (
           <div className="w-full rounded-2xl py-3 bg-white/5 border border-white/10 text-white/50 flex items-center justify-center gap-2">
             <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
-            Đang tìm IPA cho từ này...
+            Resolving IPA for this word...
           </div>
         )}
 
         {/* Nghe mẫu — trên cùng khi ready/recording */}
         {(phase === 'ready' || phase === 'recording') && (
-          <button onClick={() => speakNeural(word, lang)} className={`w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
+          <button onClick={playModel} className={`w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
             <Volume2 size={18} />
-            Nghe mẫu
+            Model Audio
           </button>
         )}
 
@@ -1248,16 +1607,16 @@ function PronunciationPractice({
               <button onClick={playbackRecording}
                 className={`w-full rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform border ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}>
                 {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
-                {isPlayingBack ? 'Dừng' : 'Nghe lại bản ghi'}
+                {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
               </button>
             )}
             <div className="w-full rounded-2xl py-3 bg-white/5 border border-white/10 text-white/50 flex items-center justify-center gap-2">
               <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
-              Đang phân tích phát âm...
+              Analyzing pronunciation...
             </div>
-            <button onClick={reset} className={`w-full bg-white/5 border border-white/10 text-white/50 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
-              <RotateCcw size={18} />
-              Thử lại
+            <button onClick={reset} className={`w-full bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-red-900/30`}>
+              <Mic size={18} />
+              Retry
             </button>
           </>
         )}
@@ -1269,16 +1628,16 @@ function PronunciationPractice({
               <button onClick={playbackRecording}
                 className={`w-full rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform border ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}>
                 {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
-                {isPlayingBack ? 'Dừng' : 'Nghe lại'}
+                {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
               </button>
             )}
-            <button onClick={() => speakNeural(word, lang)} className={`w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
+            <button onClick={playModel} className={`w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
               <Volume2 size={16} />
-              Nghe mẫu
+              Model Audio
             </button>
-            <button onClick={resetAndRecord} className={`w-full bg-white/5 border border-white/10 text-white/50 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
-              <RotateCcw size={18} />
-              Thử lại
+            <button onClick={resetAndRecord} className={`w-full bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-red-900/30`}>
+              <Mic size={18} />
+              Retry
             </button>
           </>
         )}
@@ -1292,14 +1651,14 @@ function PronunciationPractice({
                 : 'bg-white/5 border border-white/10 text-white/25 cursor-not-allowed shadow-none'
             }`}>
             <Mic size={28} />
-            {isResolvingPhonemes ? 'Đang tìm IPA...' : canScoreWord ? `Ghi âm (${recordingDuration}s)` : 'Chưa thể chấm từ này'}
+            {isResolvingPhonemes ? 'Resolving IPA...' : canScoreWord ? `Speak (${recordingDuration}s)` : 'Cannot score this word'}
           </button>
         )}
         {phase === 'recording' && (
           <button onClick={stopRecording}
             className={`w-full bg-red-600/20 border-2 border-red-500/50 rounded-2xl ${compact ? 'py-2 text-base' : 'py-6'} flex items-center justify-center gap-3 text-red-400 active:scale-95 transition-transform`}>
             <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
-            <span className="font-bold text-xl">Đang ghi âm...</span>
+            <span className="font-bold text-xl">Speaking...</span>
             <span className="font-bold tabular-nums text-red-300 text-2xl">{countdown}s</span>
           </button>
         )}
@@ -1307,11 +1666,11 @@ function PronunciationPractice({
         {learnedControl && (
           <button
             type="button"
-            onClick={() => learnedControl.onToggle(result?.overall ?? null)}
+            onClick={toggleLearnedControl}
             className={`w-full rounded-2xl ${compact ? 'py-2 text-base' : 'py-5 text-lg'} flex items-center justify-center gap-3 font-bold border transition-transform active:scale-95 ${learnedControl.checked ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200' : 'bg-white/5 border-white/10 text-white/75'}`}
           >
             <span className={`w-6 h-6 rounded-md border flex items-center justify-center ${learnedControl.checked ? 'bg-emerald-400 border-emerald-300 text-gray-950' : 'border-white/30 text-transparent'}`}>✓</span>
-            Đã học
+            Done
           </button>
         )}
 
@@ -1326,13 +1685,13 @@ function PronunciationPractice({
               <input
                 value={searchVal}
                 onChange={e => setSearchVal(e.target.value)}
-                placeholder="Luyện từ khác..."
+                placeholder="Practice another word..."
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-white/25"
               />
             </div>
             <button type="submit"
               className="bg-blue-600/80 hover:bg-blue-500 text-white rounded-xl px-4 text-sm font-semibold transition-colors active:scale-95">
-              Tra
+              Search
             </button>
           </form>
         )}
@@ -1529,16 +1888,17 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
   )
 }
 
-function PracticeWordScreen({ word, meaning, emoji, lang, prebuiltPhonemes, strictLookup = false, onBack, onNext, onPrev, onSearchWord }) {
+function PracticeWordScreen({ word, meaning, emoji, lang, prebuiltPhonemes, strictLookup = false, detail = null, onBack, onHome, onLibrary, onDictionary, onNext, onPrev, onSearchWord, voiceControlEnabled, onVoiceControlChange, practiceSettings, recordingDurationSetting }) {
+  const practiceDetail = detail || getUsefulWordDetail(word) || buildTranslateFallbackDetail(word, meaning)
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
       <div className="px-4 pt-6 pb-2 flex items-center gap-3">
-        <button onClick={onBack} className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/70 hover:bg-white/10 transition-colors">
+        <button onClick={onBack} aria-label="Back" className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/70 hover:bg-white/10 transition-colors">
           <ChevronLeft size={20} />
         </button>
-        <span className="text-white/50 text-sm">Luyện phát âm</span>
+        <span className="text-white/50 text-sm">Pronunciation Practice</span>
       </div>
-      <PronunciationPractice key={word} word={word} meaning={meaning} emoji={emoji} lang={lang} prebuiltPhonemes={prebuiltPhonemes} strictLookup={strictLookup} onBack={onBack} onNext={onNext} onPrev={onPrev} onSearchWord={onSearchWord} />
+      <PronunciationPractice key={word} word={word} meaning={meaning} emoji={emoji} lang={lang} prebuiltPhonemes={prebuiltPhonemes} strictLookup={strictLookup} detail={practiceDetail} onBack={onBack} onHome={onHome} onLibrary={onLibrary} onDictionary={onDictionary} onNext={onNext} onPrev={onPrev} onSearchWord={onSearchWord} voiceControlEnabled={voiceControlEnabled} onVoiceControlChange={onVoiceControlChange} practiceSettings={practiceSettings} recordingDurationSetting={recordingDurationSetting} />
     </div>
   )
 }
@@ -1590,21 +1950,31 @@ function getUsefulWordDetail(word) {
   return meanings.length > 0 ? { ...raw, meanings } : null
 }
 
-function buildTranslateFallbackDetail(word) {
+function buildTranslateFallbackDetail(word, meaning = '') {
+  const cleanMeaning = meaning && !/^\d+\/\d+/.test(meaning) ? meaning : 'Google Translate available'
   return {
     word,
     level: null,
-    meanings: [{
-      pos: 'translate',
-      definitionEn: '',
-      meaningVi: 'Dịch tự động trong app để xem nghĩa tiếng Việt của từ này.',
-      exampleEn: `Translate: ${word}`,
-      exampleVi: 'App chưa có nghĩa/ví dụ đủ tốt cho từ này.',
-    }],
+    meanings: [
+      {
+        pos: 'translate',
+        definitionEn: '',
+        meaningVi: 'Use Google Translate to view the Vietnamese meaning.',
+        exampleEn: `Translate: ${word}`,
+        exampleVi: 'No local usage example is available yet.',
+      },
+      {
+        pos: word.includes(' ') ? 'phrase' : 'word',
+        definitionEn: `A practice ${word.includes(' ') ? 'phrase' : 'word'} used in pronunciation training.`,
+        meaningVi: cleanMeaning,
+        exampleEn: `I can say "${word}" clearly.`,
+        exampleVi: `Tôi có thể nói "${word}" rõ ràng.`,
+      },
+    ],
   }
 }
 
-function DictionaryScreen({ onBack }) {
+function DictionaryScreen({ onBack, voiceControlEnabled, onVoiceControlChange, onPracticeActiveChange = null, practiceSettings, recordingDurationSetting }) {
   const [query, setQuery] = useState('')
   const [commonQuery, setCommonQuery] = useState('')
   const [commonLevel, setCommonLevel] = useState('all')
@@ -1613,20 +1983,20 @@ function DictionaryScreen({ onBack }) {
   const [commonWordScores, setCommonWordScores] = useState(() => loadCommonWordScores())
   const [expandedCommonWords, setExpandedCommonWords] = useState(() => new Set())
   const [commonTranslations, setCommonTranslations] = useState({})
-  const [recordingDurationSetting, setRecordingDurationSetting] = useState(() => {
-    const saved = localStorage.getItem('recordingDuration')
-    return saved ? parseInt(saved, 10) : 3
-  })
   const [activeWord, setActiveWord] = useState(null)
   const inputRef = useRef(null)
+  useEffect(() => {
+    onPracticeActiveChange?.(Boolean(activeWord))
+    return () => onPracticeActiveChange?.(false)
+  }, [activeWord, onPracticeActiveChange])
   const openWord = (word, meta = {}) => {
     const w = word.trim().toLowerCase()
     const usefulDetail = meta.detail || getUsefulWordDetail(w)
-    const fallbackDetail = usefulDetail || buildTranslateFallbackDetail(w)
-    const firstMeaning = usefulDetail?.meanings?.[0]
+    const fallbackDetail = usefulDetail || buildTranslateFallbackDetail(w, meta.meaning)
+    const firstMeaning = usefulDetail?.meanings?.find(item => item.pos !== 'translate')
     if (w) setActiveWord({
       word: w,
-      meaning: meta.meaning || firstMeaning?.meaningVi || 'Dịch tự động trong app',
+      meaning: meta.meaning || firstMeaning?.meaningVi || 'Google Translate available',
       emoji: meta.emoji || '📖',
       strictLookup: meta.strictLookup ?? true,
       source: meta.source || 'search',
@@ -1662,12 +2032,6 @@ function DictionaryScreen({ onBack }) {
       })
       return next
     })
-  }
-
-  const changeRecordingDurationSetting = (value) => {
-    const next = Math.max(1, Math.min(10, value))
-    setRecordingDurationSetting(next)
-    localStorage.setItem('recordingDuration', next)
   }
 
   const toggleCommonDetail = (word) => {
@@ -1712,11 +2076,11 @@ function DictionaryScreen({ onBack }) {
     const commonList = activeWord.commonList || []
     const commonIndex = activeWord.commonIndex ?? -1
     const commonEntry = activeWord.entry || commonList[commonIndex] || null
-    const commonDetail = activeWord.detail || getUsefulWordDetail(activeWord.word) || buildTranslateFallbackDetail(activeWord.word)
+    const commonDetail = activeWord.detail || getUsefulWordDetail(activeWord.word) || buildTranslateFallbackDetail(activeWord.word, activeWord.meaning)
     const openCommonAt = (nextIndex) => {
       const nextEntry = commonList[nextIndex]
       if (!nextEntry) return
-      const nextDetail = getUsefulWordDetail(nextEntry.word.toLowerCase()) || buildTranslateFallbackDetail(nextEntry.word)
+      const nextDetail = getUsefulWordDetail(nextEntry.word.toLowerCase()) || buildTranslateFallbackDetail(nextEntry.word, `${nextEntry.level} · ${nextEntry.pos}`)
       openWord(nextEntry.word, {
         meaning: nextDetail.meanings?.[0]?.meaningVi || `${nextEntry.level} · ${nextEntry.pos}`,
         emoji: '📚',
@@ -1728,16 +2092,25 @@ function DictionaryScreen({ onBack }) {
         commonIndex: nextIndex,
       })
     }
-    const onPrevCommon = isCommonWord && commonIndex > 0 ? () => openCommonAt(commonIndex - 1) : null
-    const onNextCommon = isCommonWord && commonIndex >= 0 && commonIndex < commonList.length - 1 ? () => openCommonAt(commonIndex + 1) : null
+    const findCommonNavIndex = (direction) => {
+      if (!isCommonWord || commonIndex < 0) return -1
+      for (let i = commonIndex + direction; i >= 0 && i < commonList.length; i += direction) {
+        if (!practiceSettings.unlearnedNavOnly || !learnedCommonWords.has(commonList[i].word.toLowerCase())) return i
+      }
+      return -1
+    }
+    const prevCommonIndex = findCommonNavIndex(-1)
+    const nextCommonIndex = findCommonNavIndex(1)
+    const onPrevCommon = prevCommonIndex >= 0 ? () => openCommonAt(prevCommonIndex) : null
+    const onNextCommon = nextCommonIndex >= 0 ? () => openCommonAt(nextCommonIndex) : null
 
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
         <div className="px-4 pt-6 pb-2 flex items-center gap-3">
-          <button onClick={() => setActiveWord(null)} className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/70">
+          <button onClick={() => setActiveWord(null)} aria-label="Back" className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/70">
             <ChevronLeft size={20} />
           </button>
-          <span className="text-white/50 text-sm">Từ điển phát âm</span>
+          <span className="text-white/50 text-sm">Dictionary</span>
         </div>
         <PronunciationPractice
           key={activeWord.word}
@@ -1752,9 +2125,16 @@ function DictionaryScreen({ onBack }) {
             onToggle: (latestScore) => toggleCommonLearned(activeWord.word, latestScore),
           } : null}
           onBack={() => setActiveWord(null)}
+          onHome={onBack}
+          onLibrary={onBack}
+          onDictionary={() => setActiveWord(null)}
           onPrev={onPrevCommon}
           onNext={onNextCommon}
           onSearchWord={openWord}
+          voiceControlEnabled={voiceControlEnabled}
+          onVoiceControlChange={onVoiceControlChange}
+          practiceSettings={practiceSettings}
+          recordingDurationSetting={recordingDurationSetting}
         />
       </div>
     )
@@ -1785,26 +2165,6 @@ function DictionaryScreen({ onBack }) {
       </form>
 
       <div className="px-4">
-        <div className="mb-4 bg-white/5 border border-white/10 rounded-2xl px-3 py-2">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-white/70 text-sm font-semibold">Setting</div>
-              <div className="text-white/35 text-xs">Thời gian ghi âm</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => changeRecordingDurationSetting(recordingDurationSetting - 1)}
-                className="w-8 h-8 rounded-xl bg-white/10 border border-white/15 text-white/70 text-lg font-bold flex items-center justify-center active:scale-90">
-                −
-              </button>
-              <span className="text-white/70 text-sm w-10 text-center">{recordingDurationSetting}s</span>
-              <button onClick={() => changeRecordingDurationSetting(recordingDurationSetting + 1)}
-                className="w-8 h-8 rounded-xl bg-white/10 border border-white/15 text-white/70 text-lg font-bold flex items-center justify-center active:scale-90">
-                +
-              </button>
-            </div>
-          </div>
-        </div>
-
         <div className="flex items-end justify-between gap-3 mb-3">
           <div>
             <h2 className="text-white font-semibold">3000 từ thông dụng</h2>
@@ -1862,12 +2222,12 @@ function DictionaryScreen({ onBack }) {
             const key = entry.word.toLowerCase()
             const isLearned = learnedCommonWords.has(entry.word.toLowerCase())
             const savedScore = commonWordScores[entry.word.toLowerCase()]
-            const detail = getUsefulWordDetail(entry.word) || buildTranslateFallbackDetail(entry.word)
-            const firstMeaning = detail?.meanings?.[0]
+            const detail = getUsefulWordDetail(entry.word) || buildTranslateFallbackDetail(entry.word, `${entry.level} · ${entry.pos}`)
+            const firstMeaning = detail?.meanings?.find(item => item.pos !== 'translate')
             const isExpanded = expandedCommonWords.has(key)
             const hasDetails = detail?.meanings?.length > 0
-            const needsListTranslation = detail?.meanings?.some(item => item.pos === 'translate')
             const listTranslation = commonTranslations[key]
+            const listStructures = buildWordStructures(entry.word)
             return (
             <div
               key={`${entry.level}-${entry.word}`}
@@ -1907,7 +2267,7 @@ function DictionaryScreen({ onBack }) {
                     type="button"
                     onClick={() => {
                       toggleCommonDetail(entry.word)
-                      if (!isExpanded && needsListTranslation && !listTranslation?.text && !listTranslation?.loading) {
+                      if (!isExpanded && !listTranslation?.text && !listTranslation?.loading) {
                         translateCommonInList(entry.word)
                       }
                     }}
@@ -1920,36 +2280,34 @@ function DictionaryScreen({ onBack }) {
               </div>
               {isExpanded && hasDetails && (
                 <div className="border-t border-white/10 px-3 py-2.5 flex flex-col gap-2">
+                  <div className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-2">
+                    <div className="text-cyan-100/60 text-[10px] font-semibold uppercase tracking-wide">Google Translate</div>
+                    {listTranslation?.loading && <div className="text-cyan-100/70 text-sm mt-0.5">Translating...</div>}
+                    {listTranslation?.text && <div className="text-cyan-50 text-sm font-semibold leading-snug mt-0.5">Google Translate: {listTranslation.text}</div>}
+                    {listTranslation?.error && <div className="text-red-200 text-xs mt-0.5">{listTranslation.error}</div>}
+                  </div>
                   {detail.meanings.map((item, itemIndex) => (
                     <div key={`${entry.word}-${item.pos}-${itemIndex}`} className="min-w-0">
-                      {item.pos === 'translate' ? (
-                        <div className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-2">
-                          <div className="text-cyan-100/60 text-[10px] font-semibold uppercase tracking-wide">Dịch tiếng Việt</div>
-                          {listTranslation?.loading && <div className="text-cyan-100/70 text-sm mt-0.5">Đang dịch trong app...</div>}
-                          {listTranslation?.text && <div className="text-cyan-50 text-sm font-semibold leading-snug mt-0.5">{listTranslation.text}</div>}
-                          {listTranslation?.error && <div className="text-red-200 text-xs mt-0.5">{listTranslation.error}</div>}
-                          {!listTranslation?.loading && !listTranslation?.text && (
-                            <button
-                              type="button"
-                              onClick={() => translateCommonInList(entry.word)}
-                              className="mt-1 rounded-lg bg-cyan-500/15 border border-cyan-400/30 text-cyan-100 px-2 py-1 text-xs font-semibold active:scale-95"
-                            >
-                              Dịch trong app
-                            </button>
-                          )}
-                        </div>
-                      ) : (
+                      {item.pos !== 'translate' && (
                         <>
-                          <div className="flex items-start gap-2 min-w-0">
-                            <span className="shrink-0 text-[10px] uppercase tracking-wide text-emerald-300 border border-emerald-400/25 rounded px-1.5 py-0.5">{item.pos}</span>
-                            <span className="text-white/85 text-sm leading-snug">{item.meaningVi}</span>
-                          </div>
-                          <div className="text-white/45 text-xs leading-snug mt-1">{item.exampleEn}</div>
+                          <div className="text-emerald-300 font-semibold text-sm capitalize leading-snug">{item.pos}</div>
+                          <div className="text-white/85 text-sm leading-snug"><span className="text-emerald-300 font-semibold">Meaning:</span> {item.meaningVi}</div>
+                          <div className="text-white/45 text-xs leading-snug mt-1"><span className="text-emerald-300 font-semibold">Example:</span> {item.exampleEn}</div>
                           <div className="text-white/35 text-xs leading-snug">{item.exampleVi}</div>
                         </>
                       )}
                     </div>
                   ))}
+                  {listStructures.length > 0 && (
+                    <div className="border-t border-white/10 pt-2">
+                      <div className="text-emerald-300 font-semibold text-sm leading-snug">Collocations & Structures:</div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {listStructures.map(pattern => (
+                          <span key={pattern} className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-white/75 text-xs">{pattern}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1967,22 +2325,122 @@ function DictionaryScreen({ onBack }) {
 
 // ─── BOTTOM NAV ───────────────────────────────────────────────────────────
 
-function BottomNav({ screen, onNavigate }) {
+function BottomNav({
+  screen,
+  onNavigate,
+  voiceControlEnabled,
+  onVoiceControlChange,
+  settingsOpen,
+  onSettingsOpenChange,
+  recordingDurationSetting,
+  onRecordingDurationChange,
+  practiceSettings,
+  onPracticeSettingsChange,
+}) {
   const items = [
-    { label: 'Trang Chủ',     icon: Home,     target: 'library',    active: screen === 'library' },
-    { label: 'Sound Library', icon: Library,  target: 'library',    active: ['soundDetail', 'practiceWord'].includes(screen) },
-    { label: 'Từ Điển',       icon: BookOpen, target: 'dictionary', active: screen === 'dictionary' },
+    { label: 'Home',       icon: Home,     target: 'library',    active: screen === 'library' },
+    { label: 'Library',    icon: Library,  target: 'library',    active: ['soundDetail', 'practiceWord'].includes(screen) },
+    { label: 'Dictionary', icon: BookOpen, target: 'dictionary', active: screen === 'dictionary' },
   ]
+  const settingItems = [
+    ['readNewWordAloud', 'Read aloud when a new word appears'],
+    ['unlearnedNavOnly', 'Next/Back only unlearned words'],
+    ['autoTranslateOnLoad', 'Automatically translate new words'],
+    ['autoExpandUsage', 'Automatically expand usage'],
+  ]
+  const changePracticeSetting = (key, value) => {
+    onPracticeSettingsChange({ ...practiceSettings, [key]: value })
+  }
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-white/10 flex z-40">
-      {items.map(({ label, icon: Icon, target, active }) => (
-        <button key={label} onClick={() => onNavigate(target)}
-          className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${active ? 'text-white' : 'text-white/30 hover:text-white/60'}`}>
-          <Icon size={22} strokeWidth={active ? 2.5 : 1.5} />
-          <span className="text-xs">{label}</span>
+    <>
+      {settingsOpen && (
+        <div className="fixed left-3 right-3 bottom-20 z-50 max-w-md mx-auto rounded-2xl border border-gray-200 bg-white shadow-2xl p-3">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-200">
+            <div>
+              <div className="text-gray-950 text-sm font-semibold">Settings</div>
+              <div className="text-gray-500 text-xs">Practice behavior</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onSettingsOpenChange(false)}
+              className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-500 hover:text-gray-950 hover:bg-gray-200 transition-colors"
+              aria-label="Close settings"
+            >
+              x
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 py-3">
+            <div>
+              <div className="text-gray-900 text-sm font-medium">Recording Duration</div>
+              <div className="text-gray-500 text-xs">Speak timer length</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onRecordingDurationChange(recordingDurationSetting - 1)}
+                className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 text-lg font-bold flex items-center justify-center active:scale-90"
+                aria-label="Decrease recording duration"
+              >
+                &minus;
+              </button>
+              <span className="text-gray-900 text-sm w-10 text-center">{recordingDurationSetting}s</span>
+              <button
+                type="button"
+                onClick={() => onRecordingDurationChange(recordingDurationSetting + 1)}
+                className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 text-lg font-bold flex items-center justify-center active:scale-90"
+                aria-label="Increase recording duration"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            {settingItems.map(([key, label]) => (
+              <label key={key} className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-gray-700 text-xs">
+                <span className="leading-snug">{label}</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(practiceSettings[key])}
+                  onChange={e => changePracticeSetting(key, e.target.checked)}
+                  className="h-4 w-4 shrink-0 accent-emerald-400"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-white/10 flex z-40">
+        <label className={`w-24 shrink-0 flex flex-col items-center justify-center gap-1 py-2 border-r border-white/10 transition-colors ${voiceControlEnabled ? 'text-emerald-200 bg-emerald-500/10' : 'text-white/40'}`}>
+          <input
+            type="checkbox"
+            checked={voiceControlEnabled}
+            onChange={e => onVoiceControlChange(e.target.checked)}
+            className="h-4 w-4 accent-emerald-400"
+          />
+          <span className="text-[10px] leading-tight text-center">Enable Voice Control</span>
+        </label>
+        {items.map(({ label, icon: Icon, target, active }) => (
+          <button key={label} onClick={() => onNavigate(target)}
+            className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${active ? 'text-white' : 'text-white/30 hover:text-white/60'}`}>
+            <Icon size={22} strokeWidth={active ? 2.5 : 1.5} />
+            <span className="text-xs">{label}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onSettingsOpenChange(!settingsOpen)}
+          className={`w-16 shrink-0 flex flex-col items-center gap-1 py-3 border-l border-white/10 transition-colors ${settingsOpen ? 'text-white bg-white/10' : 'text-white/35 hover:text-white/60'}`}
+          aria-label="Settings"
+        >
+          <Settings size={22} strokeWidth={settingsOpen ? 2.5 : 1.5} />
+          <span className="text-xs">Settings</span>
         </button>
-      ))}
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -1995,15 +2453,34 @@ export default function App() {
   const [practiceWordIdx, setPracticeWordIdx] = useState(0)
   const [dictionaryScreenKey, setDictionaryScreenKey] = useState(0)
   const [lang, setLang] = useState('en')   // 'en' | 'es' | 'it'
+  const [voiceControlEnabled, setVoiceControlEnabled] = useState(false)
+  const [dictionaryPracticeActive, setDictionaryPracticeActive] = useState(false)
+  const [practiceSettings, setPracticeSettingsState] = useState(() => loadPracticeSettings())
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [recordingDurationSetting, setRecordingDurationSetting] = useState(() => {
+    const saved = localStorage.getItem('recordingDuration')
+    return saved ? parseInt(saved, 10) : 3
+  })
+  const appSpeechRef = useRef(null)
 
   const azureCode = LANG_CONFIG[lang].azureCode
 
   const handleSelectSound = (sound) => { setSelectedSound(sound); setScreen('soundDetail') }
   const handlePracticeWord = (w, idx = 0) => { setPracticeWord(w); setPracticeWordIdx(idx); setScreen('practiceWord') }
+  const setPracticeSettings = (nextSettings) => {
+    setPracticeSettingsState(nextSettings)
+    savePracticeSettings(nextSettings)
+  }
+  const changeRecordingDurationSetting = (value) => {
+    const next = Math.max(1, Math.min(10, value))
+    setRecordingDurationSetting(next)
+    localStorage.setItem('recordingDuration', next)
+  }
   const handleNavigate = (s) => {
     setScreen(s)
     setSelectedSound(null)
     setPracticeWord(null)
+    setSettingsOpen(false)
     if (s === 'dictionary') setDictionaryScreenKey(prev => prev + 1)
   }
   const handleChangeLang = (l) => { setLang(l); setSelectedSound(null); setPracticeWord(null) }
@@ -2023,6 +2500,71 @@ export default function App() {
     return buildPhonemes(w.phonemes, phonemeInfoMap)
   }
 
+  useEffect(() => {
+    const practiceVoiceActive = screen === 'practiceWord' || dictionaryPracticeActive
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+
+    if (!voiceControlEnabled || practiceVoiceActive) {
+      appSpeechRef.current?.stop?.()
+      appSpeechRef.current = null
+      return
+    }
+
+    if (!SpeechRecognition) {
+      setVoiceControlEnabled(false)
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    let stopped = false
+    recognition.continuous = true
+    recognition.interimResults = false
+    recognition.lang = 'en-US'
+    recognition.onresult = (event) => {
+      const last = event.results[event.results.length - 1]
+      const normalized = (last?.[0]?.transcript || '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim()
+      const words = new Set(normalized.split(' ').filter(Boolean))
+      const has = (...terms) => terms.some(term => words.has(term) || normalized.includes(term))
+      let executed = false
+
+      if (has('home') || has('library')) {
+        handleNavigate('library')
+        executed = true
+      } else if (has('dictionary')) {
+        handleNavigate('dictionary')
+        executed = true
+      } else if (has('back')) {
+        if (screen === 'soundDetail') setScreen('library')
+        else if (screen === 'dictionary') handleNavigate('library')
+        else handleNavigate('library')
+        executed = true
+      } else if (has('play') && screen === 'soundDetail' && selectedSound?.words?.[0]) {
+        speakNeural(selectedSound.words[0].word, azureCode)
+        executed = true
+      }
+
+      if (executed) {
+        stopped = true
+        recognition.stop()
+        setVoiceControlEnabled(false)
+      }
+    }
+    recognition.onend = () => {
+      if (!stopped && voiceControlEnabled && !practiceVoiceActive) {
+        try { recognition.start() } catch {}
+      }
+    }
+
+    appSpeechRef.current = recognition
+    try { recognition.start() } catch {}
+
+    return () => {
+      stopped = true
+      recognition.onend = null
+      recognition.stop()
+    }
+  }, [azureCode, dictionaryPracticeActive, screen, selectedSound, voiceControlEnabled])
+
   return (
     <div className="max-w-md mx-auto bg-[#0f0f1a] min-h-screen relative">
       {screen === 'library' && (
@@ -2039,14 +2581,32 @@ export default function App() {
           lang={azureCode}
           prebuiltPhonemes={getWordPhonemes(practiceWord)}
           onBack={() => setScreen('soundDetail')}
+          onHome={() => handleNavigate('library')}
+          onLibrary={() => handleNavigate('library')}
+          onDictionary={() => handleNavigate('dictionary')}
           onNext={onNextWord}
           onPrev={onPrevWord}
+          voiceControlEnabled={voiceControlEnabled}
+          onVoiceControlChange={setVoiceControlEnabled}
+          practiceSettings={practiceSettings}
+          recordingDurationSetting={recordingDurationSetting}
         />
       )}
       {screen === 'dictionary' && (
-        <DictionaryScreen key={dictionaryScreenKey} onBack={() => handleNavigate('library')} />
+        <DictionaryScreen key={dictionaryScreenKey} onBack={() => handleNavigate('library')} voiceControlEnabled={voiceControlEnabled} onVoiceControlChange={setVoiceControlEnabled} onPracticeActiveChange={setDictionaryPracticeActive} practiceSettings={practiceSettings} recordingDurationSetting={recordingDurationSetting} />
       )}
-      <BottomNav screen={screen} onNavigate={handleNavigate} />
+      <BottomNav
+        screen={screen}
+        onNavigate={handleNavigate}
+        voiceControlEnabled={voiceControlEnabled}
+        onVoiceControlChange={setVoiceControlEnabled}
+        settingsOpen={settingsOpen}
+        onSettingsOpenChange={setSettingsOpen}
+        recordingDurationSetting={recordingDurationSetting}
+        onRecordingDurationChange={changeRecordingDurationSetting}
+        practiceSettings={practiceSettings}
+        onPracticeSettingsChange={setPracticeSettings}
+      />
     </div>
   )
 }
