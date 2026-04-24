@@ -20,8 +20,10 @@ function showMobileUrl() {
       server.printUrls = () => {
         orig()
         const ip = getLocalIP()
+        const address = server.httpServer?.address()
+        const port = typeof address === 'object' && address ? address.port : server.config.server.port
         console.log(`\n  📱 \x1b[1m\x1b[36mĐiện thoại cùng WiFi:\x1b[0m`)
-        console.log(`     \x1b[4m\x1b[33mhttps://${ip}:5173/learnPronunciation/\x1b[0m\n`)
+        console.log(`     \x1b[4m\x1b[33mhttps://${ip}:${port}/learnPronunciation/\x1b[0m\n`)
       }
     },
   }

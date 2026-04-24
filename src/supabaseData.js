@@ -2,6 +2,35 @@ import { requireSupabase } from './supabaseClient.js'
 
 export const WORD_TYPES = ['noun', 'verb', 'adjective', 'adverb', 'phrase', 'other']
 export const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+export const WORD_LANGUAGES = ['english', 'spanish', 'italian', 'french']
+
+const LANGUAGE_ALIASES = {
+  english: 'english', en: 'english', eng: 'english', 'en-us': 'english', 'tiếng anh': 'english', 'tieng anh': 'english',
+  spanish: 'spanish', es: 'spanish', esp: 'spanish', 'es-es': 'spanish', 'tiếng tây ban nha': 'spanish', 'tieng tay ban nha': 'spanish',
+  italian: 'italian', it: 'italian', ita: 'italian', 'it-it': 'italian', 'tiếng ý': 'italian', 'tieng y': 'italian',
+  french: 'french', fr: 'french', fra: 'french', 'fr-fr': 'french', 'tiếng pháp': 'french', 'tieng phap': 'french',
+}
+
+export function normalizeLanguage(value, fallback = 'english') {
+  if (!value) return fallback
+  const key = String(value).trim().toLowerCase()
+  return LANGUAGE_ALIASES[key] || (WORD_LANGUAGES.includes(key) ? key : fallback)
+}
+export const GENERIC_VIETNAMESE_DEFINITIONS = [
+  'Một cách tuyệt đối hoặc vô điều kiện; hoàn toàn, tích cực, toàn bộ.',
+  'Một câu cảm thán thông dụng trong tiếng Anh.',
+  'Một công cụ xác định tiếng Anh phổ biến.',
+  'Một đại từ tiếng Anh thông dụng.',
+  'Một danh từ tiếng Anh thông dụng.',
+  'Một động từ liên kết tiếng Anh phổ biến.',
+  'Một động từ tiếng Anh thông dụng.',
+  'Một giới từ tiếng Anh thông dụng.',
+  'Một liên từ tiếng Anh thông dụng.',
+  'Một số thứ tự tiếng Anh phổ biến.',
+  'Một số tiếng Anh thông dụng.',
+  'Một tính từ tiếng Anh thông dụng.',
+  'Một trạng từ tiếng Anh thông dụng.',
+]
 
 function normalizeWord(word) {
   return String(word || '').trim().toLowerCase()
@@ -38,6 +67,7 @@ export function wordRowFromForm(form) {
     antonyms: splitList(form.antonyms),
     category_id: form.category_id || null,
     level: LEVELS.includes(form.level) ? form.level : null,
+    language: normalizeLanguage(form.language),
     source: form.source || 'manual',
   }
 }
@@ -89,7 +119,7 @@ export async function deleteCategory(id) {
   if (error) throw error
 }
 
-export async function listWords({ query = '', categoryId = 'all', level = 'all', limit = 5000 } = {}) {
+export async function listWords({ query = '', categoryId = 'all', level = 'all', language = 'all', missingIpa = false, genericDefinition = false, limit = 5000 } = {}) {
   const client = requireSupabase()
   let request = client
     .from('words')
@@ -97,27 +127,79 @@ export async function listWords({ query = '', categoryId = 'all', level = 'all',
     .order('word', { ascending: true })
     .limit(limit)
 
-  if (query.trim()) {
+  if (missingIpa) {
+    request = request.or('ipa.is.null,ipa.eq.')
+  }
+  if (genericDefinition) {
+    request = request.in('vietnamese_definition', GENERIC_VIETNAMESE_DEFINITIONS)
+  }
+  if (!missingIpa && !genericDefinition && query.trim()) {
     const q = query.trim().replace(/[%_]/g, '\\$&')
     request = request.or(`word.ilike.%${q}%,vietnamese_definition.ilike.%${q}%,root_word.ilike.%${q}%`)
   }
-  if (categoryId !== 'all') request = request.eq('category_id', categoryId || null)
-  if (level !== 'all') request = request.eq('level', level)
+  if (!missingIpa && !genericDefinition && categoryId !== 'all') request = request.eq('category_id', categoryId || null)
+  if (!missingIpa && !genericDefinition && level !== 'all') request = request.eq('level', level)
+  if (language && language !== 'all') request = request.eq('language', normalizeLanguage(language))
 
   const { data, error } = await request
   if (error) throw error
   return data || []
 }
 
-export async function getWordByText(word) {
+export async function fetchAllWords({ pageSize = 1000 } = {}) {
+  const client = requireSupabase()
+  const all = []
+  let from = 0
+  for (;;) {
+    const to = from + pageSize - 1
+    const { data, error } = await client
+      .from('words')
+      .select('*, categories(id,name,slug,level)')
+      .order('word', { ascending: true })
+      .range(from, to)
+    if (error) throw error
+    const batch = data || []
+    all.push(...batch)
+    if (batch.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
+export async function setWordFlagged(id, flagged) {
+  const client = requireSupabase()
+  const { data, error } = await client
+    .from('words')
+    .update({ flagged_incorrect: !!flagged })
+    .eq('id', id)
+    .select('*, categories(id,name,slug,level)')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function getWordByText(word, language = null) {
   const client = requireSupabase()
   const normalized = String(word || '').trim().toLowerCase()
   if (!normalized) return null
+
+  if (language) {
+    const lang = normalizeLanguage(language)
+    const { data, error } = await client
+      .from('words')
+      .select('*, categories(id,name,slug,level)')
+      .eq('normalized_word', normalized)
+      .eq('language', lang)
+      .limit(1)
+    if (error) throw error
+    if (data?.[0]) return data[0]
+  }
 
   const { data, error } = await client
     .from('words')
     .select('*, categories(id,name,slug,level)')
     .eq('normalized_word', normalized)
+    .order('created_at', { ascending: true })
     .limit(1)
   if (error) throw error
   return data?.[0] || null
@@ -133,6 +215,56 @@ export async function upsertWord(form) {
   const { data, error } = await client.from('words').upsert(row).select('*').single()
   if (error) throw error
   return data
+}
+
+export async function updateWordStudyFields(word, fields, language = null) {
+  const client = requireSupabase()
+  const normalized = String(word || '').trim().toLowerCase()
+  if (!normalized) throw new Error('Word is required.')
+  const scopedLanguage = language || fields.language || null
+
+  const payload = {
+    vietnamese_definition: String(fields.vietnamese_definition || '').trim(),
+    example_sentence: String(fields.example_sentence || '').trim() || null,
+    root_word: String(fields.root_word || '').trim() || null,
+    family_words: Array.isArray(fields.family_words) ? fields.family_words.map(String).map(v => v.trim()).filter(Boolean) : [],
+    synonyms: Array.isArray(fields.synonyms) ? fields.synonyms.map(String).map(v => v.trim()).filter(Boolean) : [],
+    antonyms: Array.isArray(fields.antonyms) ? fields.antonyms.map(String).map(v => v.trim()).filter(Boolean) : [],
+  }
+  if (!payload.vietnamese_definition) throw new Error('Vietnamese definition is required.')
+
+  let request = client
+    .from('words')
+    .update(payload)
+    .eq('normalized_word', normalized)
+    .select('*, categories(id,name,slug,level)')
+  if (scopedLanguage) request = request.eq('language', normalizeLanguage(scopedLanguage))
+  const { data, error } = await request
+  if (error) throw error
+  if (!data?.length) throw new Error(`Không tìm thấy "${word}" trong Supabase.`)
+  return data[0]
+}
+
+export const updateWordVietnameseDefinition = (word, vietnameseDefinition) =>
+  updateWordStudyFields(word, { vietnamese_definition: vietnameseDefinition })
+
+export async function updateWordIpa(word, ipa, language = null) {
+  const client = requireSupabase()
+  const normalized = String(word || '').trim().toLowerCase()
+  if (!normalized) throw new Error('Word is required.')
+  const cleanIpa = String(ipa || '').trim()
+  if (!cleanIpa) throw new Error('IPA is required.')
+
+  let request = client
+    .from('words')
+    .update({ ipa: cleanIpa })
+    .eq('normalized_word', normalized)
+    .select('id, word, ipa, language')
+  if (language) request = request.eq('language', normalizeLanguage(language))
+  const { data, error } = await request
+  if (error) throw error
+  if (!data?.length) throw new Error(`Không tìm thấy "${word}" trong Supabase. Thêm từ trước khi cập nhật IPA.`)
+  return data[0]
 }
 
 export async function deleteWord(id) {
@@ -153,6 +285,7 @@ export async function findOrCreateWord(word, meta = {}) {
     p_vietnamese_definition: meta.meaning || meta.vietnamese_definition || 'Google Translate available',
     p_example_sentence: meta.example_sentence || null,
     p_level: LEVELS.includes(meta.level) ? meta.level : null,
+    p_language: normalizeLanguage(meta.language),
     p_source: meta.source || 'app',
   })
   if (error) throw error
@@ -237,14 +370,17 @@ export async function updateProfile(profile) {
   return data
 }
 
-export function mapImportedWordRow(row, categories = []) {
+function readImportRow(row, categories = []) {
   const lower = Object.fromEntries(Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value]))
   const categoryName = String(lower.category || lower['chủ đề'] || lower.topic || '').trim()
-  const category = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase() || c.slug === slugify(categoryName))
+  const category = categoryName
+    ? categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase() || c.slug === slugify(categoryName))
+    : null
+  const rawLanguage = lower.language || lower['ngôn ngữ'] || lower['ngon ngu'] || lower.lang
 
-  return wordRowFromForm({
+  return {
     word: lower.word || lower['từ'] || lower.tu,
-    type: lower.type || lower['loại từ'] || lower.pos || 'other',
+    type: lower.type || lower['loại từ'] || lower.pos,
     ipa: lower.ipa,
     vietnamese_definition: lower.vietnamese_definition || lower.meaning_vi || lower['nghĩa tiếng việt'] || lower.meaning,
     example_sentence: lower.example_sentence || lower.example || lower['ví dụ'],
@@ -253,20 +389,135 @@ export function mapImportedWordRow(row, categories = []) {
     synonyms: lower.synonyms || lower['từ đồng nghĩa'],
     antonyms: lower.antonyms || lower['từ trái nghĩa'],
     category_id: category?.id || null,
+    categoryProvided: Boolean(categoryName),
     level: lower.level || lower['cấp độ'],
+    language: normalizeLanguage(rawLanguage),
+    languageProvided: Boolean(String(rawLanguage || '').trim()),
+  }
+}
+
+export function mapImportedWordRow(row, categories = []) {
+  const parsed = readImportRow(row, categories)
+  return wordRowFromForm({
+    ...parsed,
+    type: parsed.type || 'other',
     source: 'excel',
   })
 }
 
-export async function importWords(rows, categories = []) {
-  const client = requireSupabase()
-  const mapped = rows.map(row => mapImportedWordRow(row, categories)).filter(row => row.word && row.vietnamese_definition)
-  if (mapped.length === 0) throw new Error('Không có dòng hợp lệ để import.')
+function hasValue(v) {
+  if (Array.isArray(v)) return v.length > 0
+  return v !== undefined && v !== null && String(v).trim() !== ''
+}
 
-  const { data, error } = await client
+function buildPartialUpdate(parsed) {
+  const fields = {}
+  const typeStr = String(parsed.type || '').trim()
+  if (typeStr && WORD_TYPES.includes(typeStr)) fields.type = typeStr
+  if (hasValue(parsed.ipa)) fields.ipa = String(parsed.ipa).trim()
+  if (hasValue(parsed.vietnamese_definition)) fields.vietnamese_definition = String(parsed.vietnamese_definition).trim()
+  if (hasValue(parsed.example_sentence)) fields.example_sentence = String(parsed.example_sentence).trim()
+  if (hasValue(parsed.root_word)) fields.root_word = String(parsed.root_word).trim()
+  if (hasValue(parsed.family_words)) fields.family_words = splitList(parsed.family_words)
+  if (hasValue(parsed.synonyms)) fields.synonyms = splitList(parsed.synonyms)
+  if (hasValue(parsed.antonyms)) fields.antonyms = splitList(parsed.antonyms)
+  if (parsed.categoryProvided && parsed.category_id) fields.category_id = parsed.category_id
+  const levelStr = String(parsed.level || '').trim()
+  if (levelStr && LEVELS.includes(levelStr)) fields.level = levelStr
+  if (parsed.languageProvided && WORD_LANGUAGES.includes(parsed.language)) {
+    fields.language = parsed.language
+  }
+  return fields
+}
+
+export async function importWords(rows, categories = [], { onProgress } = {}) {
+  const client = requireSupabase()
+  const report = (event) => { try { onProgress?.(event) } catch {} }
+
+  report({ phase: 'reading', current: 0, total: rows.length })
+
+  const parsedRows = rows
+    .map(row => readImportRow(row, categories))
+    .filter(p => String(p.word || '').trim())
+  if (parsedRows.length === 0) throw new Error('Không có dòng hợp lệ để import.')
+
+  const dedupedByKey = new Map()
+  for (const parsed of parsedRows) {
+    const norm = String(parsed.word).trim().toLowerCase()
+    const lang = normalizeLanguage(parsed.language)
+    dedupedByKey.set(`${norm}|${lang}`, parsed)
+  }
+  const dedupedRows = [...dedupedByKey.values()]
+
+  const normalizedWords = [...new Set(dedupedRows.map(p => String(p.word).trim().toLowerCase()))]
+  report({ phase: 'fetching', current: 0, total: normalizedWords.length })
+  const { data: existing, error: fetchErr } = await client
     .from('words')
-    .upsert(mapped, { onConflict: 'normalized_word,category_key' })
-    .select('*')
-  if (error) throw error
-  return data || []
+    .select('id, normalized_word, language, created_at')
+    .in('normalized_word', normalizedWords)
+    .order('created_at', { ascending: true })
+  if (fetchErr) throw fetchErr
+
+  const existingIdByKey = new Map()
+  for (const w of existing || []) {
+    const key = `${w.normalized_word}|${w.language || 'english'}`
+    if (!existingIdByKey.has(key)) {
+      existingIdByKey.set(key, w.id)
+    }
+  }
+
+  const toInsert = []
+  const updateOps = []
+
+  for (const parsed of dedupedRows) {
+    const norm = String(parsed.word).trim().toLowerCase()
+    const lang = normalizeLanguage(parsed.language)
+    const existingId = existingIdByKey.get(`${norm}|${lang}`)
+
+    if (existingId) {
+      const fields = buildPartialUpdate(parsed)
+      if (Object.keys(fields).length > 0) {
+        updateOps.push({ id: existingId, fields })
+      }
+    } else {
+      const insertRow = wordRowFromForm({
+        ...parsed,
+        type: parsed.type || 'other',
+        source: 'excel',
+      })
+      if (insertRow.vietnamese_definition) {
+        toInsert.push(insertRow)
+      }
+    }
+  }
+
+  const inserted = []
+  const updated = []
+  const totalWrites = toInsert.length + updateOps.length
+  let processed = 0
+
+  if (toInsert.length > 0) {
+    report({ phase: 'inserting', current: processed, total: totalWrites })
+    const { data, error } = await client.from('words').insert(toInsert).select('*')
+    if (error) throw error
+    inserted.push(...(data || []))
+    processed += toInsert.length
+    report({ phase: 'inserting', current: processed, total: totalWrites })
+  }
+
+  for (const op of updateOps) {
+    const { data, error } = await client
+      .from('words')
+      .update(op.fields)
+      .eq('id', op.id)
+      .select('*')
+      .single()
+    if (error) throw error
+    if (data) updated.push(data)
+    processed += 1
+    report({ phase: 'updating', current: processed, total: totalWrites })
+  }
+
+  report({ phase: 'done', current: totalWrites, total: totalWrites })
+  return { inserted, updated, all: [...inserted, ...updated] }
 }

@@ -7,6 +7,7 @@ create type public.word_type as enum ('noun', 'verb', 'adjective', 'adverb', 'ph
 create type public.difficulty_level as enum ('A1', 'A2', 'B1', 'B2', 'C1', 'C2');
 create type public.ipa_status as enum ('correct', 'incorrect');
 create type public.app_role as enum ('admin', 'teacher', 'student');
+create type public.word_language as enum ('english', 'spanish', 'italian', 'french');
 
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -46,10 +47,12 @@ create table public.words (
   category_key uuid generated always as (coalesce(category_id, '00000000-0000-0000-0000-000000000000'::uuid)) stored,
   level public.difficulty_level,
   source text not null default 'manual',
+  flagged_incorrect boolean not null default false,
+  language public.word_language not null default 'english',
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (normalized_word, category_key)
+  unique (normalized_word, category_key, language)
 );
 
 create table public.user_word_progress (
@@ -205,6 +208,7 @@ create or replace function public.get_or_create_word(
   p_vietnamese_definition text default 'Google Translate available',
   p_example_sentence text default null,
   p_level public.difficulty_level default null,
+  p_language public.word_language default 'english',
   p_source text default 'app'
 )
 returns public.words
@@ -222,6 +226,7 @@ begin
   select * into v_word
   from public.words
   where normalized_word = lower(trim(p_word))
+    and language = coalesce(p_language, 'english'::public.word_language)
   order by created_at asc
   limit 1;
 
@@ -230,7 +235,7 @@ begin
   end if;
 
   insert into public.words (
-    word, type, ipa, vietnamese_definition, example_sentence, level, source, created_by
+    word, type, ipa, vietnamese_definition, example_sentence, level, language, source, created_by
   )
   values (
     lower(trim(p_word)),
@@ -239,6 +244,7 @@ begin
     coalesce(nullif(trim(coalesce(p_vietnamese_definition, '')), ''), 'Google Translate available'),
     nullif(trim(coalesce(p_example_sentence, '')), ''),
     p_level,
+    coalesce(p_language, 'english'::public.word_language),
     coalesce(nullif(trim(coalesce(p_source, '')), ''), 'app'),
     auth.uid()
   )
@@ -252,6 +258,8 @@ create index categories_level_idx on public.categories(level);
 create index words_category_id_idx on public.words(category_id);
 create index words_level_idx on public.words(level);
 create index words_normalized_word_idx on public.words(normalized_word);
+create index words_flagged_incorrect_idx on public.words(flagged_incorrect) where flagged_incorrect;
+create index words_language_idx on public.words(language);
 create index words_search_idx on public.words using gin (
   to_tsvector('simple', coalesce(word, '') || ' ' || coalesce(vietnamese_definition, '') || ' ' || coalesce(root_word, ''))
 );

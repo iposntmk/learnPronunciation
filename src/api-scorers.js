@@ -185,15 +185,33 @@ const EN_STRESS_IDX = {
   water:0, weather:0, wonderful:0, yogurt:0, yummy:0, zebra:0,
 }
 
-// Azure (en-US) returns lowercase ARPAbet-like phoneme names → IPA
+// Azure (en-US) returns lowercase ARPAbet-like phoneme names → IPA.
+// Azure's extended set also uses `ax` for schwa and `axr` for r-colored schwa,
+// in addition to ah/er. Keep both to be safe across Azure regions/versions.
 const AZURE_TO_IPA_EN = {
   iy: 'iː', ih: 'ɪ', eh: 'ɛ', ae: 'æ', ah: 'ʌ', uw: 'uː', uh: 'ʊ',
   ao: 'ɔː', aa: 'ɑː', aw: 'aʊ', ay: 'aɪ', ow: 'oʊ', oy: 'ɔɪ',
-  er: 'ɜː', ey: 'eɪ',
+  er: 'ɜːr', ey: 'eɪ',
+  ax: 'ə', axr: 'ər', ix: 'ɪ', ux: 'u',
   p: 'p', b: 'b', t: 't', d: 'd', k: 'k', g: 'g',
   f: 'f', v: 'v', th: 'θ', dh: 'ð', s: 's', z: 'z',
   sh: 'ʃ', zh: 'ʒ', hh: 'h', h: 'h', ch: 'tʃ', jh: 'dʒ',
   m: 'm', n: 'n', ng: 'ŋ', l: 'l', r: 'r', w: 'w', y: 'j',
+  dx: 'ɾ', nx: 'ɾ̃', q: 'ʔ', el: 'l̩', em: 'm̩', en: 'n̩',
+}
+
+// ARPAbet stress digit changes the IPA for some EN vowels.
+// 0 = unstressed (often reduced), 1 = primary stress, 2 = secondary.
+const AZURE_EN_STRESSED_IPA = {
+  ah: { 0: 'ə', 1: 'ʌ', 2: 'ʌ' },
+  er: { 0: 'ər', 1: 'ɜːr', 2: 'ɜːr' },
+  iy: { 0: 'i', 1: 'iː', 2: 'iː' },
+  ih: { 0: 'ɪ', 1: 'ɪ', 2: 'ɪ' },
+  uw: { 0: 'u', 1: 'uː', 2: 'uː' },
+  ae: { 0: 'æ', 1: 'æ', 2: 'æ' },
+  eh: { 0: 'ɛ', 1: 'ɛ', 2: 'ɛ' },
+  ao: { 0: 'ɔ', 1: 'ɔː', 2: 'ɔː' },
+  aa: { 0: 'ɑ', 1: 'ɑː', 2: 'ɑː' },
 }
 
 // Azure es-ES phoneme IDs → IPA
@@ -491,21 +509,34 @@ export async function scoreWordAzure(audioBlob, phonemes, subscriptionKey, regio
   }
 
   const nbest = data.NBest?.[0]
-  const azureWord = nbest?.Words?.[0] || null
-  const spokenWord = (nbest?.Lexical || '').trim().toLowerCase().replace(/[.,!?]/g, '').split(/\s+/)[0] || ''
+  const spokenWord = (nbest?.Lexical || '').trim().toLowerCase().replace(/[.,!?]/g, '') || ''
   // Scores are directly on NBest[0], not nested under PronunciationAssessment
   const overallScore = Math.round(nbest?.PronScore ?? nbest?.AccuracyScore ?? 0)
 
   // Build ordered Azure phoneme list so repeated sounds are matched by position,
   // not by a single ipa -> best-score map.
   const phonemeMap = AZURE_PHONEME_MAPS[language] || AZURE_TO_IPA_EN
-  const azurePhonemes = (nbest?.Words?.[0]?.Phonemes || []).map((ap, index) => {
+  const rawPhonemes = (nbest?.Words || []).flatMap(word => word?.Phonemes || [])
+  console.log('[Azure] raw phoneme IDs:', rawPhonemes.map(p => p.Phoneme).join(' '))
+  const azurePhonemes = rawPhonemes.map((ap, index) => {
     const rawId = ap.Phoneme || ''
-    const ipa = phonemeMap[rawId] || phonemeMap[rawId.toLowerCase()]
-    if (!ipa) return null
+    const stressMatch = rawId.match(/^(.+?)([012])$/)
+    const baseId = stressMatch ? stressMatch[1] : rawId
+    const stressDigit = stressMatch ? stressMatch[2] : ''
+    const baseKey = baseId.toLowerCase()
+    const stressedMap = language === 'en-US' ? AZURE_EN_STRESSED_IPA[baseKey] : null
+    const ipa = (stressDigit && stressedMap && stressedMap[stressDigit])
+      || phonemeMap[baseId]
+      || phonemeMap[baseKey]
+    if (!ipa) {
+      console.warn('[Azure] unmapped phoneme:', rawId)
+      return null
+    }
+    const stressMark = stressDigit === '1' ? 'ˈ' : stressDigit === '2' ? 'ˌ' : ''
     return {
       index,
       ipa,
+      stressMark,
       score: Math.round(ap.AccuracyScore ?? ap.PronunciationAssessment?.AccuracyScore ?? 0),
       offset: (ap.Offset ?? 0) / 10_000_000,
       duration: (ap.Duration ?? 0) / 10_000_000,
@@ -534,5 +565,7 @@ export async function scoreWordAzure(audioBlob, phonemes, subscriptionKey, regio
     ? Math.round(scored.reduce((s, p) => s + p.score, 0) / scored.length)
     : overallScore
 
-  return { phonemes: scored, overall, spokenWord, stress: null }
+  const azureIpa = azurePhonemes.map(p => `${p.stressMark || ''}${p.ipa}`).join('')
+
+  return { phonemes: scored, overall, spokenWord, stress: null, azureIpa }
 }
