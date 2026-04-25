@@ -9,6 +9,7 @@ import {
   deleteCategory,
   deleteWord,
   fetchAllWords,
+  importCategories,
   importWords,
   listCategories,
   listProfiles,
@@ -423,6 +424,39 @@ export default function AdminScreen({ profile, onBack }) {
     writeFile(workbook, 'pronunciation-import-template.xlsx')
   }
 
+  const handleImportCategories = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setLoading(true)
+    setMessage('')
+    try {
+      const buf = await file.arrayBuffer()
+      const workbook = read(buf)
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const rows = utils.sheet_to_json(sheet, { defval: '' })
+      const imported = await importCategories(rows)
+      await refreshCategories()
+      setMessage(`Đã import ${imported.length} chủ đề từ Excel.`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setLoading(false)
+      event.target.value = ''
+    }
+  }
+
+  const handleDownloadCategoryTemplate = () => {
+    const wb = utils.book_new()
+    const ws = utils.aoa_to_sheet([
+      ['name', 'slug', 'level', 'description'],
+      ['Business English', 'business-english', 'B1', 'Từ vựng kinh doanh'],
+      ['Travel & Tourism', 'travel-tourism', 'A2', 'Từ vựng du lịch'],
+      ['Technology', 'technology', 'B2', 'Từ vựng công nghệ'],
+    ])
+    utils.book_append_sheet(wb, ws, 'Categories')
+    writeFile(wb, 'category-template.xlsx')
+  }
+
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-gray-950 text-white p-4">
@@ -615,6 +649,16 @@ export default function AdminScreen({ profile, onBack }) {
 
       {tab === 'categories' && (
         <div className="px-4 grid gap-4">
+          <div className="flex gap-2">
+            <label className="rounded-xl bg-white text-gray-950 px-3 py-2.5 text-xs font-bold cursor-pointer">
+              Import Excel
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImportCategories} className="hidden" />
+            </label>
+            <button type="button" onClick={handleDownloadCategoryTemplate} className="rounded-xl bg-white/10 text-white px-3 py-2.5 text-xs font-bold flex items-center gap-2">
+              <Download size={15} />
+              File mẫu
+            </button>
+          </div>
           <section className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
             <button
               type="button"

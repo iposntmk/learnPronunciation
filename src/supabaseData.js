@@ -521,3 +521,29 @@ export async function importWords(rows, categories = [], { onProgress } = {}) {
   report({ phase: 'done', current: totalWrites, total: totalWrites })
   return { inserted, updated, all: [...inserted, ...updated] }
 }
+
+export function mapImportedCategoryRow(row) {
+  const lower = Object.fromEntries(Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value]))
+  const name = String(lower.name || lower['tên'] || lower.ten || '').trim()
+  const slug = String(lower.slug || '').trim() || slugify(name)
+  const levelRaw = String(lower.level || lower['cấp độ'] || lower['cap do'] || '').trim()
+  return {
+    name,
+    slug,
+    level: LEVELS.includes(levelRaw) ? levelRaw : null,
+    description: String(lower.description || lower['mô tả'] || lower['mo ta'] || '').trim() || null,
+  }
+}
+
+export async function importCategories(rows) {
+  const client = requireSupabase()
+  const mapped = rows.map(mapImportedCategoryRow).filter(row => row.name)
+  if (mapped.length === 0) throw new Error('Không có dòng hợp lệ để import.')
+
+  const { data, error } = await client
+    .from('categories')
+    .upsert(mapped, { onConflict: 'slug' })
+    .select('*')
+  if (error) throw error
+  return data || []
+}

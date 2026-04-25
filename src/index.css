@@ -60,3 +60,8 @@ body {
   animation: slideUp 0.4s ease-out;
 }
 
+select option {
+  background-color: #111827;
+  color: white;
+}
+
