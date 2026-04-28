@@ -7,7 +7,9 @@
                     "build":  "vite build",
                     "preview":  "vite preview",
                     "supabase:check":  "node scripts/supabaseSeedCommonWords.mjs --check",
-                    "supabase:seed":  "node scripts/supabaseSeedCommonWords.mjs"
+                    "supabase:seed":  "node scripts/supabaseSeedCommonWords.mjs",
+                    "supabase:check-sentences":  "node scripts/supabaseSeedSentences.mjs --check",
+                    "supabase:seed-sentences":  "node scripts/supabaseSeedSentences.mjs"
                 },
     "dependencies":  {
                          "@huggingface/transformers":  "^4.1.0",

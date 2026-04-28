@@ -10,9 +10,11 @@ import {
   deleteWord,
   fetchAllWords,
   importCategories,
+  importSentences,
   importWords,
   listCategories,
   listProfiles,
+  listSentences,
   setWordFlagged,
   updateProfile,
   upsertCategory,
@@ -22,6 +24,7 @@ import {
 const WORDS_CACHE_KEY = 'admin_words_cache_v2'
 const STRESS_CHARS = ["ˈ", "ˌ", "'", "ʹ", "´"]
 const WORDS_PAGE_SIZE = 150
+const SENTENCES_PAGE_SIZE = 100
 
 function loadCachedWords() {
   try {
@@ -124,6 +127,9 @@ export default function AdminScreen({ profile, onBack }) {
   const [tab, setTab] = useState('words')
   const [categories, setCategories] = useState([])
   const [allWords, setAllWords] = useState([])
+  const [sentences, setSentences] = useState([])
+  const [sentencesLoaded, setSentencesLoaded] = useState(false)
+  const [sentencesRefreshing, setSentencesRefreshing] = useState(false)
   const [wordsLoaded, setWordsLoaded] = useState(false)
   const [wordsCacheChecked, setWordsCacheChecked] = useState(false)
   const [wordsCachedAt, setWordsCachedAt] = useState(null)
@@ -132,6 +138,12 @@ export default function AdminScreen({ profile, onBack }) {
   const [profilesLoaded, setProfilesLoaded] = useState(false)
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
+  const [sentenceQuery, setSentenceQuery] = useState('')
+  const deferredSentenceQuery = useDeferredValue(sentenceQuery)
+  const [sentenceLevelFilter, setSentenceLevelFilter] = useState('all')
+  const [sentenceTopicFilter, setSentenceTopicFilter] = useState('all')
+  const [sentenceLanguageFilter, setSentenceLanguageFilter] = useState('all')
+  const [visibleSentenceLimit, setVisibleSentenceLimit] = useState(SENTENCES_PAGE_SIZE)
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [languageFilter, setLanguageFilter] = useState('all')
   const [wordStatusFilter, setWordStatusFilter] = useState('all')
@@ -188,6 +200,19 @@ export default function AdminScreen({ profile, onBack }) {
       setWordsRefreshing(false)
     }
   }, [])
+  const refreshSentences = useCallback(async () => {
+    setSentencesRefreshing(true)
+    try {
+      const data = await listSentences({ limit: 2000 })
+      setSentences(data)
+      setSentencesLoaded(true)
+    } catch (err) {
+      setSentencesLoaded(true)
+      setToast({ type: 'error', message: `Sentence load failed: ${err.message}` })
+    } finally {
+      setSentencesRefreshing(false)
+    }
+  }, [])
   const refreshProfiles = useCallback(async () => {
     setProfiles(await listProfiles())
     setProfilesLoaded(true)
@@ -199,15 +224,20 @@ export default function AdminScreen({ profile, onBack }) {
 
   useEffect(() => {
     if (tab === 'words' && wordsCacheChecked && !wordsLoaded && !wordsRefreshing) refreshWords()
+    if (tab === 'sentences' && !sentencesLoaded && !sentencesRefreshing) refreshSentences()
     if (tab === 'users' && !profilesLoaded) refreshProfiles().catch(err => {
       setProfilesLoaded(true)
       setMessage(err.message)
     })
-  }, [profilesLoaded, refreshProfiles, refreshWords, tab, wordsCacheChecked, wordsLoaded, wordsRefreshing])
+  }, [profilesLoaded, refreshProfiles, refreshSentences, refreshWords, sentencesLoaded, sentencesRefreshing, tab, wordsCacheChecked, wordsLoaded, wordsRefreshing])
 
   useEffect(() => {
     setVisibleWordLimit(WORDS_PAGE_SIZE)
   }, [allWords, categoryFilter, deferredQuery, languageFilter, wordStatusFilter])
+
+  useEffect(() => {
+    setVisibleSentenceLimit(SENTENCES_PAGE_SIZE)
+  }, [deferredSentenceQuery, sentenceLanguageFilter, sentenceLevelFilter, sentenceTopicFilter, sentences])
 
   useEffect(() => {
     if (tab !== 'words') return
@@ -255,6 +285,32 @@ export default function AdminScreen({ profile, onBack }) {
   const visibleWords = useMemo(
     () => displayedWords.slice(0, visibleWordLimit),
     [displayedWords, visibleWordLimit]
+  )
+
+  const sentenceTopicOptions = useMemo(
+    () => [...new Set(sentences.map(item => String(item.topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [sentences]
+  )
+
+  const displayedSentences = useMemo(() => {
+    let list = sentences
+    if (sentenceLanguageFilter !== 'all') list = list.filter(item => (item.language || 'english') === sentenceLanguageFilter)
+    if (sentenceLevelFilter !== 'all') list = list.filter(item => item.level === sentenceLevelFilter)
+    if (sentenceTopicFilter !== 'all') list = list.filter(item => item.topic === sentenceTopicFilter)
+    const q = deferredSentenceQuery.trim().toLowerCase()
+    if (q) {
+      list = list.filter(item =>
+        (item.sentence || '').toLowerCase().includes(q) ||
+        (item.vietnamese_translation || '').toLowerCase().includes(q) ||
+        (item.topic || '').toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [deferredSentenceQuery, sentenceLanguageFilter, sentenceLevelFilter, sentenceTopicFilter, sentences])
+
+  const visibleSentences = useMemo(
+    () => displayedSentences.slice(0, visibleSentenceLimit),
+    [displayedSentences, visibleSentenceLimit]
   )
 
   const editWord = useCallback((item) => {
@@ -424,6 +480,71 @@ export default function AdminScreen({ profile, onBack }) {
     writeFile(workbook, 'pronunciation-import-template.xlsx')
   }
 
+  const handleImportSentences = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setLoading(true)
+    setMessage('')
+    setImportProgress({ phase: 'reading', current: 0, total: 0 })
+    try {
+      const buf = await file.arrayBuffer()
+      const workbook = read(buf)
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const rows = utils.sheet_to_json(sheet, { defval: '' })
+      const imported = await importSentences(rows, {
+        onProgress: (event) => setImportProgress(event),
+      })
+      await refreshSentences()
+      setToast({ type: 'success', message: `Imported ${imported.length} sentences.` })
+    } catch (err) {
+      setToast({ type: 'error', message: `Sentence import failed: ${err.message}` })
+    } finally {
+      setLoading(false)
+      setImportProgress(null)
+      event.target.value = ''
+    }
+  }
+
+  const exportSentences = () => {
+    const rows = displayedSentences.map(item => ({
+      sentence: item.sentence || '',
+      language: item.language || 'english',
+      vietnamese_translation: item.vietnamese_translation || '',
+      topic: item.topic || '',
+      level: item.level || '',
+      source: item.source || '',
+    }))
+    const worksheet = utils.json_to_sheet(rows)
+    const workbook = utils.book_new()
+    utils.book_append_sheet(workbook, worksheet, 'sentences')
+    writeFile(workbook, 'pronunciation-sentences.xlsx')
+  }
+
+  const downloadSentenceTemplate = () => {
+    const rows = [
+      {
+        sentence: 'Could you speak a little more slowly?',
+        language: 'english',
+        vietnamese_translation: 'Ban co the noi cham hon mot chut khong?',
+        topic: 'Conversation',
+        level: 'A2',
+        source: 'admin-import',
+      },
+      {
+        sentence: 'Quiero practicar español todos los días.',
+        language: 'spanish',
+        vietnamese_translation: 'Toi muon luyen tap tieng Tay Ban Nha moi ngay.',
+        topic: 'Study',
+        level: 'A1',
+        source: 'admin-import',
+      },
+    ]
+    const worksheet = utils.json_to_sheet(rows)
+    const workbook = utils.book_new()
+    utils.book_append_sheet(workbook, worksheet, 'sentence-template')
+    writeFile(workbook, 'sentence-import-template.xlsx')
+  }
+
   const handleImportCategories = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -473,12 +594,12 @@ export default function AdminScreen({ profile, onBack }) {
         <button onClick={onBack} className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center"><ChevronLeft size={20} /></button>
         <div>
           <h1 className="text-xl font-bold">Admin</h1>
-          <p className="text-white/40 text-xs">Words, categories, users</p>
+          <p className="text-white/40 text-xs">Words, sentences, categories, users</p>
         </div>
       </div>
 
       <div className="px-4 flex gap-2 mb-4">
-        {['words', 'categories', 'users'].map(item => (
+        {['words', 'sentences', 'categories', 'users'].map(item => (
           <button key={item} onClick={() => setTab(item)} className={`flex-1 rounded-xl py-2 text-sm font-semibold ${tab === item ? 'bg-white text-gray-950' : 'bg-white/10 text-white/60'}`}>
             {item}
           </button>
@@ -640,6 +761,88 @@ export default function AdminScreen({ profile, onBack }) {
               {displayedWords.length === 0 && (
                 <div className="rounded-xl border border-white/10 bg-gray-950/40 p-4 text-sm text-white/45 text-center">
                   Không có từ nào khớp bộ lọc.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'sentences' && (
+        <div className="px-4 grid gap-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4">
+            <div className="relative mb-3">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+              <input
+                className={`${inputClass()} pl-10 py-3 text-base`}
+                value={sentenceQuery}
+                onChange={e => setSentenceQuery(e.target.value)}
+                placeholder="Search sentences, translation, topic..."
+              />
+            </div>
+            <div className="grid gap-2 mb-3 grid-cols-2 sm:grid-cols-4">
+              <button type="button" onClick={exportSentences} disabled={displayedSentences.length === 0} className="rounded-xl bg-emerald-300 text-gray-950 px-3 py-2.5 text-xs font-bold disabled:opacity-40 flex items-center justify-center gap-2">
+                <Download size={15} />
+                Export Excel
+              </button>
+              <button type="button" onClick={downloadSentenceTemplate} className="rounded-xl bg-white/10 text-white px-3 py-2.5 text-xs font-bold flex items-center justify-center gap-2">
+                <Download size={15} />
+                File mau
+              </button>
+              <label className="rounded-xl bg-white text-gray-950 px-3 py-2.5 text-xs font-bold cursor-pointer flex items-center justify-center">
+                Import Excel
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImportSentences} className="hidden" />
+              </label>
+              <button type="button" onClick={refreshSentences} disabled={sentencesRefreshing} className="rounded-xl bg-white/10 text-white px-3 py-2.5 text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+                <RefreshCw size={15} className={sentencesRefreshing ? 'animate-spin' : ''} />
+                Reload
+              </button>
+            </div>
+            <div className="grid gap-2 mb-3 sm:grid-cols-3">
+              <select className={inputClass()} value={sentenceLanguageFilter} onChange={e => setSentenceLanguageFilter(e.target.value)}>
+                <option value="all">All languages</option>
+                {WORD_LANGUAGES.map(language => <option key={language} value={language}>{LANGUAGE_LABEL[language]}</option>)}
+              </select>
+              <select className={inputClass()} value={sentenceLevelFilter} onChange={e => setSentenceLevelFilter(e.target.value)}>
+                <option value="all">All levels</option>
+                {LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
+              </select>
+              <select className={inputClass()} value={sentenceTopicFilter} onChange={e => setSentenceTopicFilter(e.target.value)}>
+                <option value="all">All topics</option>
+                {sentenceTopicOptions.map(topic => <option key={topic} value={topic}>{topic}</option>)}
+              </select>
+            </div>
+            <div className="mb-3 flex flex-wrap gap-x-2 gap-y-1 text-xs text-white/45">
+              <span>Showing {visibleSentences.length}/{displayedSentences.length} sentences</span>
+              <span>· total {sentences.length}</span>
+              {sentencesRefreshing && <span>· loading...</span>}
+              {sentenceQuery !== deferredSentenceQuery && <span>· filtering...</span>}
+            </div>
+            <div className="grid gap-2">
+              {visibleSentences.map(item => (
+                <div key={item.id} className="rounded-xl border border-white/10 bg-gray-950/40 p-3">
+                  <div className="font-semibold leading-snug break-words">{item.sentence}</div>
+                  <div className="text-white/50 text-sm leading-snug mt-1 break-words">{item.vietnamese_translation || 'No translation'}</div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_LABEL[item.language || 'english']}</span>
+                    {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
+                    {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
+                    {item.source && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/35">{item.source}</span>}
+                  </div>
+                </div>
+              ))}
+              {visibleSentences.length < displayedSentences.length && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleSentenceLimit(limit => limit + SENTENCES_PAGE_SIZE)}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/70 active:scale-[0.99]"
+                >
+                  Show more {Math.min(SENTENCES_PAGE_SIZE, displayedSentences.length - visibleSentences.length)} sentences
+                </button>
+              )}
+              {displayedSentences.length === 0 && (
+                <div className="rounded-xl border border-white/10 bg-gray-950/40 p-4 text-sm text-white/45 text-center">
+                  No sentences match the current filters.
                 </div>
               )}
             </div>

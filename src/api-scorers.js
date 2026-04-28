@@ -569,3 +569,126 @@ export async function scoreWordAzure(audioBlob, phonemes, subscriptionKey, regio
 
   return { phonemes: scored, overall, spokenWord, stress: null, azureIpa }
 }
+
+export async function scoreSentenceAzure(audioBlob, referenceText, subscriptionKey, region, language = 'en-US') {
+  const wavBlob = await audioBlobToPcmWav(audioBlob)
+  const cleanText = String(referenceText || '').trim()
+  if (!cleanText) throw new Error('Missing sentence reference text.')
+
+  const wavDurationSeconds = wavBlob.size / (16000 * 2)
+  recordAzureUsage(wavDurationSeconds)
+
+  const assessmentCfg = {
+    ReferenceText: cleanText,
+    GradingSystem: 'HundredMark',
+    Granularity: 'Phoneme',
+    Dimension: 'Comprehensive',
+    EnableMiscue: true,
+    EnableProsodyAssessment: true,
+  }
+  const cleanKey = subscriptionKey.trim().replace(/[\r\n]/g, '')
+  const cleanRegion = region.trim().replace(/[\r\n]/g, '')
+  const assessmentHeader = btoa(JSON.stringify(assessmentCfg)).replace(/[\r\n]/g, '')
+
+  const url = `https://${cleanRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${encodeURIComponent(language)}&format=detailed`
+  console.log('[Azure sentence] POST', url, '| text:', cleanText, '| keyLen:', cleanKey.length, '| keyPrefix:', cleanKey.slice(0, 6) + '...')
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': cleanKey,
+      'Content-Type': 'audio/wav',
+      'Pronunciation-Assessment': assessmentHeader,
+    },
+    body: wavBlob,
+  })
+  console.log('[Azure sentence] response status:', resp.status, resp.statusText)
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '')
+    console.error('[Azure sentence] error body:', txt)
+    const hint = resp.status === 401
+      ? ' — Key sai hoặc hết hạn. Kiểm tra lại GitHub Secret AZUREKEY.'
+      : resp.status === 403 ? ' — Không có quyền truy cập resource.'
+      : resp.status === 0 ? ' — CORS bị chặn.'
+      : ''
+    throw new Error(`Azure ${resp.status}${hint} ${txt.slice(0, 150)}`)
+  }
+
+  const data = await resp.json()
+
+  if (data.RecognitionStatus !== 'Success') {
+    throw new Error(`Azure không nhận ra giọng nói: ${data.RecognitionStatus}`)
+  }
+
+  const nbest = data.NBest?.[0]
+  const spokenText = (nbest?.Display || nbest?.Lexical || '').trim()
+  const overallScore = Math.round(nbest?.PronScore ?? nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.PronScore ?? 0)
+  const accuracyScore = Math.round(nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.AccuracyScore ?? overallScore)
+  const fluencyScore = Math.round(nbest?.FluencyScore ?? nbest?.PronunciationAssessment?.FluencyScore ?? 0)
+  const completenessScore = Math.round(nbest?.CompletenessScore ?? nbest?.PronunciationAssessment?.CompletenessScore ?? 0)
+  const prosodyScore = Math.round(nbest?.ProsodyScore ?? nbest?.PronunciationAssessment?.ProsodyScore ?? 0)
+
+  const phonemeMap = AZURE_PHONEME_MAPS[language] || AZURE_TO_IPA_EN
+  const words = nbest?.Words || []
+  const sentenceWords = words.map((word, index) => {
+    const phonemeScores = (word?.Phonemes || [])
+      .map(phoneme => Number(phoneme?.AccuracyScore ?? phoneme?.PronunciationAssessment?.AccuracyScore))
+      .filter(Number.isFinite)
+    const score = Math.round(
+      word?.AccuracyScore
+      ?? word?.PronunciationAssessment?.AccuracyScore
+      ?? (phonemeScores.length ? phonemeScores.reduce((sum, item) => sum + item, 0) / phonemeScores.length : overallScore)
+    )
+    return {
+      index,
+      text: word?.Word || '',
+      score,
+      errorType: word?.ErrorType || null,
+      audioOffset: (word?.Offset ?? 0) / 10_000_000,
+      audioDuration: (word?.Duration ?? 0) / 10_000_000,
+      phonemeCount: word?.Phonemes?.length || 0,
+    }
+  }).filter(word => word.text)
+  const rawPhonemes = words.flatMap(word => (word?.Phonemes || []).map(phoneme => ({ ...phoneme, wordText: word.Word || '' })))
+  const sentencePhonemes = rawPhonemes.map((ap, index) => {
+    const rawId = ap.Phoneme || ''
+    const stressMatch = rawId.match(/^(.+?)([012])$/)
+    const baseId = stressMatch ? stressMatch[1] : rawId
+    const stressDigit = stressMatch ? stressMatch[2] : ''
+    const baseKey = baseId.toLowerCase()
+    const stressedMap = language === 'en-US' ? AZURE_EN_STRESSED_IPA[baseKey] : null
+    const ipa = (stressDigit && stressedMap && stressedMap[stressDigit])
+      || phonemeMap[baseId]
+      || phonemeMap[baseKey]
+    if (!ipa) return null
+    const stressMark = stressDigit === '1' ? 'ˈ' : stressDigit === '2' ? 'ˌ' : ''
+    const score = Math.round(ap.AccuracyScore ?? ap.PronunciationAssessment?.AccuracyScore ?? overallScore)
+    return {
+      index,
+      text: ap.wordText || ipa,
+      ipa,
+      isStressed: stressDigit === '1',
+      score,
+      audioOffset: (ap.Offset ?? 0) / 10_000_000,
+      audioDuration: (ap.Duration ?? 0) / 10_000_000,
+      note: score < 60 ? `Âm /${ipa}/ cần luyện thêm` : null,
+      word: ap.wordText || '',
+      stressMark,
+    }
+  }).filter(Boolean)
+
+  const azureIpa = sentencePhonemes.map(p => `${p.stressMark || ''}${p.ipa}`).join(' ')
+
+  return {
+    phonemes: sentencePhonemes,
+    overall: overallScore,
+    spokenText,
+    spokenWord: spokenText,
+    accuracyScore,
+    fluencyScore,
+    completenessScore,
+    prosodyScore,
+    words: sentenceWords,
+    azureIpa,
+  }
+}

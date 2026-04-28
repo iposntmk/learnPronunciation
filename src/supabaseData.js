@@ -98,6 +98,56 @@ export async function listCategories() {
   return data || []
 }
 
+export async function listSentences({ query = '', topic = 'all', level = 'all', language = 'all', limit = 500 } = {}) {
+  const client = requireSupabase()
+  let request = client
+    .from('sentences')
+    .select('*')
+    .order('language', { ascending: true })
+    .order('level', { ascending: true, nullsFirst: false })
+    .order('topic', { ascending: true, nullsFirst: false })
+    .order('sentence', { ascending: true })
+    .limit(limit)
+
+  if (query.trim()) {
+    const q = query.trim().replace(/[%_]/g, '\\$&')
+    request = request.or(`sentence.ilike.%${q}%,vietnamese_translation.ilike.%${q}%,topic.ilike.%${q}%`)
+  }
+  if (topic !== 'all') request = request.eq('topic', topic || null)
+  if (level !== 'all') request = request.eq('level', level)
+  if (language !== 'all') request = request.eq('language', normalizeLanguage(language))
+
+  const { data, error } = await request
+  if (error) throw error
+  return data || []
+}
+
+export async function listMySentenceProgress() {
+  const client = requireSupabase()
+  const { data, error } = await client
+    .from('user_sentence_progress')
+    .select('is_learned,last_score,prosody_score,sentences(id,sentence)')
+  if (error) throw error
+  return data || []
+}
+
+export async function saveSentencePronunciationResult(sentenceId, result) {
+  const client = requireSupabase()
+  const score = Math.round(result?.overall ?? 0)
+  const prosodyScore = Number.isFinite(Number(result?.prosodyScore))
+    ? Math.round(Number(result.prosodyScore))
+    : null
+  const { data, error } = await client.rpc('mark_sentence_practiced', {
+    p_sentence_id: sentenceId,
+    p_score: score,
+    p_prosody_score: prosodyScore,
+    p_spoken_text: result?.spokenText || null,
+    p_result: result || {},
+  })
+  if (error) throw error
+  return data
+}
+
 export async function upsertCategory(input) {
   const client = requireSupabase()
   const row = {
@@ -520,6 +570,60 @@ export async function importWords(rows, categories = [], { onProgress } = {}) {
 
   report({ phase: 'done', current: totalWrites, total: totalWrites })
   return { inserted, updated, all: [...inserted, ...updated] }
+}
+
+function readSentenceImportRow(row) {
+  const lower = Object.fromEntries(Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value]))
+  const sentence = lower.sentence || lower.english_sentence || lower.english || lower.text || lower.cau || lower['cau tieng anh']
+  const translation = lower.vietnamese_translation || lower.translation || lower.meaning_vi || lower.meaning || lower.vietnamese || lower['tieng viet']
+  const level = String(lower.level || '').trim().toUpperCase()
+  const rawLanguage = lower.language || lower.lang || lower['ngon ngu'] || lower['ngôn ngữ']
+
+  return {
+    sentence: String(sentence || '').trim(),
+    vietnamese_translation: String(translation || '').trim(),
+    topic: String(lower.topic || lower.category || lower.chu_de || lower['chu de'] || '').trim() || null,
+    language: normalizeLanguage(rawLanguage),
+    level: LEVELS.includes(level) ? level : null,
+    source: String(lower.source || '').trim() || 'excel',
+  }
+}
+
+export function mapImportedSentenceRow(row) {
+  return readSentenceImportRow(row)
+}
+
+export async function importSentences(rows, { onProgress } = {}) {
+  const client = requireSupabase()
+  const report = (event) => { try { onProgress?.(event) } catch {} }
+
+  report({ phase: 'reading', current: 0, total: rows.length })
+
+  const parsedRows = rows
+    .map(readSentenceImportRow)
+    .filter(row => row.sentence)
+  if (parsedRows.length === 0) throw new Error('Không có dòng câu hợp lệ để import.')
+
+  const dedupedBySentence = new Map()
+  for (const row of parsedRows) {
+    dedupedBySentence.set(`${row.sentence.trim().toLowerCase()}|${row.language}`, row)
+  }
+  const dedupedRows = [...dedupedBySentence.values()]
+
+  const { error: ensureTopicError } = await client.rpc('ensure_sentence_topic_column')
+  if (ensureTopicError && !/function .*ensure_sentence_topic_column|Could not find the function/i.test(ensureTopicError.message || '')) {
+    throw ensureTopicError
+  }
+
+  report({ phase: 'inserting', current: 0, total: dedupedRows.length })
+  const { data, error } = await client
+    .from('sentences')
+    .upsert(dedupedRows, { onConflict: 'normalized_sentence,language' })
+    .select('*')
+
+  if (error) throw error
+  report({ phase: 'done', current: dedupedRows.length, total: dedupedRows.length })
+  return data || []
 }
 
 export function mapImportedCategoryRow(row) {

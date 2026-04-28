@@ -222,3 +222,14 @@ export async function scoreWord(audioBlob, phonemes, language = 'en-US') {
   const { scoreWordAzure } = await import('./api-scorers.js')
   return scoreWordAzure(audioBlob, phonemes, key, region, language)
 }
+
+export async function scoreSentence(audioBlob, referenceText, language = 'en-US') {
+  const key = import.meta.env.VITE_AZURE_KEY
+  const region = import.meta.env.VITE_AZURE_REGION || 'southeastasia'
+  console.log('[Azure sentence] key defined:', !!key, '| key length:', key?.length ?? 0, '| region:', region, '| lang:', language)
+  if (!key) {
+    throw new Error('Azure key chưa được cấu hình (VITE_AZURE_KEY). Sentence scoring requires Azure.')
+  }
+  const { scoreSentenceAzure } = await import('./api-scorers.js')
+  return scoreSentenceAzure(audioBlob, referenceText, key, region, language)
+}
