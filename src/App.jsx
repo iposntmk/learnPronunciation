@@ -13,7 +13,7 @@ import { COMMON_3000_LEVELS } from './commonWords.js'
 import AuthGate from './AuthGate.jsx'
 import AdminScreen from './AdminScreen.jsx'
 import { supabase } from './supabaseClient.js'
-import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listMyProgress, listMySentenceProgress, listSentences, listWords, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
+import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listMyProgress, listMySentenceProgress, listSentences, listSentenceTopics, listWords, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
 
 // ─── RACHEL'S ENGLISH LINKS ────────────────────────────────────────────────
 
@@ -1224,10 +1224,10 @@ function PronunciationPractice({
   practiceSettings = DEFAULT_PRACTICE_SETTINGS,
   recordingDurationSetting = null,
 }) {
-  const [phonemes, setPhonemes] = useState(() => prebuiltPhonemes || lookupWord(word, { allowGuess: !strictLookup }))
+  const [phonemes, setPhonemes] = useState(() => prebuiltPhonemes || lookupWord(word, { allowGuess: false }))
   const [isResolvingPhonemes, setIsResolvingPhonemes] = useState(false)
   const [saveStatus, setSaveStatus] = useState({ loading: false, error: null, saved: false })
-  const [useGuessedIpaForScore, setUseGuessedIpaForScore] = useState(false)
+  const [useGuessedIpaForScore, setUseGuessedIpaForScore] = useState(true)
   const hasUnverifiedIpa = phonemes.some(p => p.canScore === false && p.ipa && p.ipa !== '?')
   const canScoreWord = phonemes.length > 0 && phonemes.every(p => (p.canScore !== false || useGuessedIpaForScore) && p.ipa && p.ipa !== '?')
   const lookupNote = phonemes.find(p => p.lookupNote)?.lookupNote || null
@@ -1638,16 +1638,17 @@ function PronunciationPractice({
           </div>
         )}
         <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-          <div className={`${compact ? 'text-2xl' : 'text-3xl'} text-cyan-100/90 font-mono font-semibold break-all leading-tight`}>/{phonemes.map(formatIpa).join('')}/</div>
-          {hasUnverifiedIpa && phase === 'ready' && (
-            <label className={`shrink-0 rounded-xl border px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold active:scale-95 ${useGuessedIpaForScore ? 'bg-amber-400/20 border-amber-300/50 text-amber-100' : 'bg-white/5 border-white/10 text-white/55'}`}>
+          <div className={`${compact ? 'text-2xl' : 'text-3xl'} text-cyan-100/90 font-mono font-semibold break-all leading-tight`}>/{phonemes.length > 0 ? phonemes.map(formatIpa).join('') : (dictionaryIpa || '?')}/</div>
+          
+          {(hasUnverifiedIpa || (phonemes.length === 0 && dictionaryIpa)) && phase === 'ready' && (
+            <label className={`shrink-0 rounded-xl border px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold active:scale-95 ${useGuessedIpaForScore ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-100' : 'bg-white/5 border-white/10 text-white/55'}`}>
               <input
                 type="checkbox"
                 checked={useGuessedIpaForScore}
                 onChange={event => setUseGuessedIpaForScore(event.target.checked)}
-                className="accent-amber-300"
+                className="accent-cyan-400"
               />
-              Use this IPA for score
+              Use {dictionaryIpa && phonemes.length === 0 ? 'Dictionary' : 'this'} IPA for score
             </label>
           )}
           {showIncorrectAction && (
@@ -3222,20 +3223,42 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
 function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
   const [levelFilter, setLevelFilter] = useState('all')
   const [topicFilter, setTopicFilter] = useState('all')
   const [languageFilter, setLanguageFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+  const [topics, setTopics] = useState([])
 
+  // Fetch topics for the filter dropdown
+  useEffect(() => {
+    listSentenceTopics().then(setTopics).catch(err => console.error('Error fetching topics:', err))
+  }, [])
+
+  // Initial fetch and fetch on filter change
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    listSentences({ limit: 500 })
+    setPage(1)
+    
+    listSentences({
+      query: deferredQuery,
+      level: levelFilter,
+      topic: topicFilter,
+      language: languageFilter,
+      page: 1,
+      limit: 20
+    })
       .then(rows => {
-        if (!cancelled) setItems(rows || [])
+        if (!cancelled) {
+          setItems(rows || [])
+          setHasMore(rows.length === 20)
+        }
       })
       .catch(err => {
         if (!cancelled) setError(err.message || 'Không tải được câu luyện nói.')
@@ -3244,26 +3267,33 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [])
+  }, [deferredQuery, levelFilter, topicFilter, languageFilter])
 
-  const topicOptions = useMemo(
-    () => [...new Set(items.map(item => String(item.topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [items]
-  )
-
-  const filteredItems = useMemo(() => {
-    const q = String(deferredQuery || '').trim().toLowerCase()
-    return items.filter(item => {
-      const itemLanguage = normalizeLanguage(item.language || 'english')
-      if (languageFilter !== 'all' && itemLanguage !== languageFilter) return false
-      if (levelFilter !== 'all' && item.level !== levelFilter) return false
-      if (topicFilter !== 'all' && item.topic !== topicFilter) return false
-      if (!q) return true
-      return String(item.sentence || '').toLowerCase().includes(q)
-        || String(item.vietnamese_translation || '').toLowerCase().includes(q)
-        || String(item.topic || '').toLowerCase().includes(q)
+  const loadMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return
+    setLoadingMore(true)
+    const nextPage = page + 1
+    
+    listSentences({
+      query: deferredQuery,
+      level: levelFilter,
+      topic: topicFilter,
+      language: languageFilter,
+      page: nextPage,
+      limit: 20
     })
-  }, [deferredQuery, items, languageFilter, levelFilter, topicFilter])
+      .then(rows => {
+        setItems(prev => [...prev, ...rows])
+        setPage(nextPage)
+        setHasMore(rows.length === 20)
+      })
+      .catch(err => {
+        console.error('Load more error:', err)
+      })
+      .finally(() => {
+        setLoadingMore(false)
+      })
+  }, [deferredQuery, levelFilter, topicFilter, languageFilter, page, hasMore, loading, loadingMore])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
@@ -3290,14 +3320,14 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
           </select>
           <select value={topicFilter} onChange={e => setTopicFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
             <option value="all">All topics</option>
-            {topicOptions.map(topic => <option key={topic} value={topic}>{topic}</option>)}
+            {topics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
           </select>
         </div>
 
-        {loading && <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-white/50 text-sm">Loading sentences...</div>}
+        {loading && items.length === 0 && <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-white/50 text-sm">Loading sentences...</div>}
         {error && <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-4 text-red-200 text-sm">{error}</div>}
 
-        {!loading && !error && filteredItems.map(item => {
+        {items.map(item => {
           const progress = sentenceProgress[item.id] || null
           const itemLanguage = normalizeLanguage(item.language || 'english')
           const languageLabel = LANGUAGE_LABEL[itemLanguage] || itemLanguage
@@ -3305,7 +3335,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
             <button
               key={item.id}
               type="button"
-              onClick={() => onPracticeSentence(item)}
+              onClick={() => onPracticeSentence(item, items.indexOf(item), items)}
               className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-left active:scale-[0.99] transition-transform"
             >
               <div className="flex items-start gap-3">
@@ -3332,7 +3362,17 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
           )
         })}
 
-        {!loading && !error && filteredItems.length === 0 && (
+        {hasMore && !loading && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-white/70 hover:bg-white/10 transition-colors disabled:opacity-50"
+          >
+            {loadingMore ? 'Loading more...' : 'Load more sentences'}
+          </button>
+        )}
+
+        {!loading && items.length === 0 && (
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-white/45 text-sm text-center">No matching sentences found.</div>
         )}
       </div>
@@ -3356,11 +3396,11 @@ function compactSentenceResultForSave(result) {
   }
 }
 
-function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, recordingDurationSetting }) {
-  const [phase, setPhase] = useState('ready')
+function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, onNext, onPrev, hasNext, hasPrev, recordingDurationSetting, initialResult = null, onResultChange }) {
+  const [phase, setPhase] = useState(initialResult ? 'result' : 'ready')
   const [countdown, setCountdown] = useState(recordingDurationSetting || 5)
   const [errorMsg, setErrorMsg] = useState(null)
-  const [result, setResult] = useState(null)
+  const [result, setResult] = useState(initialResult)
   const [showPhonemeDetails, setShowPhonemeDetails] = useState(false)
   const [visiblePhonemeLimit, setVisiblePhonemeLimit] = useState(48)
   const [recordingUrl, setRecordingUrl] = useState(null)
@@ -3389,7 +3429,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
 
   const startRecording = useCallback(() => {
     setErrorMsg(null)
-    setResult(null)
+    setResult(null); onResultChange?.(null)
     setShowPhonemeDetails(false)
     setVisiblePhonemeLimit(48)
     setRecordingUrl(null)
@@ -3417,6 +3457,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
             const nextResult = await scoreSentence(blob, sentenceItem.sentence, lang)
             setResult(nextResult)
             setPhase('result')
+            onResultChange?.(nextResult)
             Promise.resolve(onSaveResult?.(compactSentenceResultForSave(nextResult)))
               .catch(err => console.warn('[Supabase] sentence score sync failed:', err.message))
           } catch (err) {
@@ -3603,35 +3644,60 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
             {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
           </button>
         </div>
-        {phase === 'recording' ? (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={stopRecording}
-            className="w-full rounded-2xl border-2 border-red-500/50 bg-red-600/20 py-6 text-red-400 shadow-lg shadow-red-900/20 active:scale-95 transition-transform flex items-center justify-center gap-3"
+            onClick={onPrev}
+            className="w-14 h-16 shrink-0 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/40 active:scale-95 transition-transform disabled:opacity-20"
+            disabled={!hasPrev || phase === 'recording' || phase === 'scoring'}
+            aria-label="Previous sentence"
           >
-            <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
-            <span className="font-bold text-xl">Speaking...</span>
-            <span className="font-bold tabular-nums text-red-300 text-2xl">{countdown}s</span>
+            <ChevronLeft size={24} />
           </button>
-        ) : phase === 'scoring' ? (
+
+          {phase === 'recording' ? (
+            <button
+              type="button"
+              onClick={stopRecording}
+              className="flex-1 rounded-2xl border-2 border-red-500/50 bg-red-600/20 py-5 text-red-400 shadow-lg shadow-red-900/20 active:scale-95 transition-transform flex flex-col items-center justify-center"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                <span className="font-bold text-lg">STOP</span>
+                <span className="font-bold tabular-nums text-red-300 text-xl">{countdown}s</span>
+              </div>
+              <div className="text-[10px] font-bold opacity-60 mt-0.5 uppercase tracking-widest">Tap to finish</div>
+            </button>
+          ) : phase === 'scoring' ? (
+            <button
+              type="button"
+              disabled
+              className="flex-1 rounded-2xl border border-white/10 bg-white/5 py-5 text-white/50 flex items-center justify-center gap-2"
+            >
+              <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+              <span>Analyzing...</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startRecording}
+              className="flex-1 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 py-5 text-lg font-bold text-white shadow-lg shadow-red-900/30 active:scale-95 transition-transform flex items-center justify-center gap-3"
+            >
+              <Mic size={24} />
+              {result ? 'Retry' : `Speak (${recordingDurationSetting || 5}s)`}
+            </button>
+          )}
+
           <button
             type="button"
-            disabled
-            className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-white/50 flex items-center justify-center gap-2"
+            onClick={onNext}
+            className="w-14 h-16 shrink-0 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/40 active:scale-95 transition-transform disabled:opacity-20"
+            disabled={!hasNext || phase === 'recording' || phase === 'scoring'}
+            aria-label="Next sentence"
           >
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            <span>Analyzing pronunciation...</span>
+            <ChevronRight size={24} />
           </button>
-        ) : (
-          <button
-            type="button"
-            onClick={startRecording}
-            className="w-full rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 py-6 text-xl font-bold text-white shadow-lg shadow-red-900/30 active:scale-95 transition-transform flex items-center justify-center gap-3"
-          >
-            <Mic size={26} />
-            {result ? 'Retry' : `Speak (${recordingDurationSetting || 5}s)`}
-          </button>
-        )}
+        </div>
       </div>
     </div>
   )
@@ -3789,6 +3855,7 @@ function MainApp({ profile }) {
   const [selectedSound, setSelectedSound] = useState(null)
   const [practiceWord, setPracticeWord] = useState(null)
   const [practiceSentence, setPracticeSentence] = useState(null)
+  const [practiceSentenceResult, setPracticeSentenceResult] = useState(null)
   const [practiceWordIdx, setPracticeWordIdx] = useState(0)
   const [lang, setLang] = useState('en')   // 'en' | 'es' | 'it'
   const [practiceSettings, setPracticeSettingsState] = useState(() => loadPracticeSettings())
@@ -3804,18 +3871,40 @@ function MainApp({ profile }) {
   const [learnedCommonWords, setLearnedCommonWords] = useState(() => loadLearnedCommonWords())
   const [commonWordScores, setCommonWordScores] = useState(() => loadCommonWordScores())
   const [sentenceProgress, setSentenceProgress] = useState({})
+  const [sentenceItems, setSentenceItems] = useState([])
+  const [currentSentenceIdx, setCurrentSentenceIdx] = useState(-1)
 
   const azureCode = LANG_CONFIG[lang].azureCode
 
   const handleSelectSound = (sound) => { setSelectedSound(sound); setScreen('soundDetail') }
   const handlePracticeWord = (w, idx = 0) => { setPracticeWord(w); setPracticeWordIdx(idx); setScreen('practiceWord') }
-  const handlePracticeSentence = (item) => { setPracticeSentence(item); setScreen('practiceSentence') }
+  const handlePracticeSentence = (item, idx = -1, list = []) => {
+    setPracticeSentence(item);
+    setPracticeSentenceResult(null);
+    if (idx !== -1) {
+      setCurrentSentenceIdx(idx);
+      setSentenceItems(list);
+    }
+    setScreen('practiceSentence');
+  }
   const handleSearchPracticeWord = (raw) => {
     const next = String(raw || '').trim()
     if (!next) return
     setPracticeWord({ word: next.toLowerCase(), meaning: '' })
     setPracticeWordIdx(-1)
     setScreen('practiceWord')
+  }
+  const onNextSentence = () => {
+    if (currentSentenceIdx >= 0 && sentenceItems.length > 0) {
+      const nextIdx = (currentSentenceIdx + 1) % sentenceItems.length;
+      handlePracticeSentence(sentenceItems[nextIdx], nextIdx, sentenceItems);
+    }
+  }
+  const onPrevSentence = () => {
+    if (currentSentenceIdx >= 0 && sentenceItems.length > 0) {
+      const prevIdx = (currentSentenceIdx - 1 + sentenceItems.length) % sentenceItems.length;
+      handlePracticeSentence(sentenceItems[prevIdx], prevIdx, sentenceItems);
+    }
   }
   const handlePracticeSentenceWord = (raw) => {
     const next = cleanPracticeWord(raw)
@@ -4004,9 +4093,15 @@ function MainApp({ profile }) {
       {screen === 'practiceSentence' && practiceSentence && (
         <PracticeSentenceScreen
           sentenceItem={practiceSentence}
+          initialResult={practiceSentenceResult}
+          onResultChange={setPracticeSentenceResult}
           onBack={() => setScreen('sentences')}
           onSaveResult={(result) => handleSentencePronunciationResult(practiceSentence.id, result)}
           onPracticeWord={handlePracticeSentenceWord}
+          onNext={onNextSentence}
+          onPrev={onPrevSentence}
+          hasNext={currentSentenceIdx < sentenceItems.length - 1}
+          hasPrev={currentSentenceIdx > 0}
           recordingDurationSetting={sentenceRecordingDurationSetting}
         />
       )}

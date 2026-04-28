@@ -98,8 +98,9 @@ export async function listCategories() {
   return data || []
 }
 
-export async function listSentences({ query = '', topic = 'all', level = 'all', language = 'all', limit = 500 } = {}) {
+export async function listSentences({ query = '', topic = 'all', level = 'all', language = 'all', limit = 20, page = 1 } = {}) {
   const client = requireSupabase()
+  const offset = (page - 1) * limit
   let request = client
     .from('sentences')
     .select('*')
@@ -107,7 +108,7 @@ export async function listSentences({ query = '', topic = 'all', level = 'all', 
     .order('level', { ascending: true, nullsFirst: false })
     .order('topic', { ascending: true, nullsFirst: false })
     .order('sentence', { ascending: true })
-    .limit(limit)
+    .range(offset, offset + limit - 1)
 
   if (query.trim()) {
     const q = query.trim().replace(/[%_]/g, '\\$&')
@@ -120,6 +121,18 @@ export async function listSentences({ query = '', topic = 'all', level = 'all', 
   const { data, error } = await request
   if (error) throw error
   return data || []
+}
+
+export async function listSentenceTopics() {
+  const client = requireSupabase()
+  const { data, error } = await client
+    .from('sentences')
+    .select('topic')
+    .not('topic', 'is', null)
+  
+  if (error) throw error
+  const topics = [...new Set(data.map(d => String(d.topic).trim()))].sort((a, b) => a.localeCompare(b))
+  return topics
 }
 
 export async function listMySentenceProgress() {
