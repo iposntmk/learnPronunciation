@@ -621,7 +621,8 @@ export async function scoreSentenceAzure(audioBlob, referenceText, subscriptionK
   }
 
   const nbest = data.NBest?.[0]
-  console.log('[Azure sentence] ProsodyAssessment raw:', JSON.stringify(nbest?.ProsodyAssessment ?? nbest?.PronunciationAssessment?.ProsodyAssessment ?? null))
+  console.log('[Azure sentence] nbest keys:', Object.keys(nbest || {}))
+  console.log('[Azure sentence] PronunciationAssessment keys:', Object.keys(nbest?.PronunciationAssessment || {}))
   const spokenText = (nbest?.Display || nbest?.Lexical || '').trim()
   const overallScore = Math.round(nbest?.PronScore ?? nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.PronScore ?? 0)
   const accuracyScore = Math.round(nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.AccuracyScore ?? overallScore)
@@ -629,7 +630,12 @@ export async function scoreSentenceAzure(audioBlob, referenceText, subscriptionK
   const completenessScore = Math.round(nbest?.CompletenessScore ?? nbest?.PronunciationAssessment?.CompletenessScore ?? 0)
   const prosodyScore = Math.round(nbest?.ProsodyScore ?? nbest?.PronunciationAssessment?.ProsodyScore ?? 0)
 
-  const prosodyRaw = nbest?.ProsodyAssessment ?? nbest?.PronunciationAssessment?.ProsodyAssessment ?? null
+  // Azure REST API trả về ProsodyAssessment sub-scores ở nhiều path khác nhau tuỳ version
+  const prosodyRaw = nbest?.ProsodyAssessment
+    ?? nbest?.PronunciationAssessment?.ProsodyAssessment
+    ?? (nbest?.PronunciationAssessment?.PitchScore != null ? nbest.PronunciationAssessment : null)
+    ?? null
+  console.log('[Azure sentence] prosodyRaw:', JSON.stringify(prosodyRaw))
   const prosodyDetail = prosodyRaw ? {
     pitch: Math.round(prosodyRaw.PitchScore ?? prosodyRaw.IntonationScore ?? 0),
     stress: Math.round(prosodyRaw.StressScore ?? 0),

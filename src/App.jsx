@@ -1992,6 +1992,18 @@ function PronunciationPractice({
           </>
         )}
 
+        {/* Quay lại câu đang học — ready phase */}
+        {phase === 'ready' && source === 'sentence-word' && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className={`w-full rounded-2xl bg-emerald-500/20 border border-emerald-400/35 text-emerald-100 ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform`}
+          >
+            <ChevronLeft size={16} />
+            Quay lại câu đang học
+          </button>
+        )}
+
         {/* Nút ghi âm lớn — luôn ở cuối cùng */}
         {phase === 'ready' && (
           <button onClick={startRecording} disabled={!canScoreWord || isResolvingPhonemes}
@@ -3569,28 +3581,34 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
                 <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/10 overflow-hidden">
                   <button
                     type="button"
-                    onClick={() => result.prosodyDetail && setShowProsodyDetail(v => !v)}
-                    className={`w-full px-3 py-1 flex items-center justify-between ${result.prosodyDetail ? 'active:scale-[0.99] cursor-pointer' : 'cursor-default'}`}
+                    onClick={() => setShowProsodyDetail(v => !v)}
+                    className="w-full px-3 py-1 flex items-center justify-between active:scale-[0.99]"
                   >
                     <div className="text-fuchsia-200/70 text-[10px] uppercase tracking-wide flex items-center gap-1">
                       Intonation
-                      {result.prosodyDetail && <span className="text-fuchsia-400/60 text-[9px]">{showProsodyDetail ? '▲' : '▼'}</span>}
+                      <span className="text-fuchsia-400/60 text-[9px]">{showProsodyDetail ? '▲' : '▼'}</span>
                     </div>
                     <div className="text-sm font-bold text-fuchsia-100">{result.prosodyScore ?? 0}%</div>
                   </button>
-                  {showProsodyDetail && result.prosodyDetail && (
+                  {showProsodyDetail && (
                     <div className="px-3 pb-2 border-t border-fuchsia-400/15 grid grid-cols-2 gap-x-3 gap-y-1 mt-1">
                       {[
-                        { label: 'Pitch', value: result.prosodyDetail.pitch },
-                        { label: 'Stress', value: result.prosodyDetail.stress },
-                        { label: 'Rhythm', value: result.prosodyDetail.rhythm },
-                        { label: 'Continuity', value: result.prosodyDetail.continuity },
+                        { label: 'Pitch', value: result.prosodyDetail?.pitch },
+                        { label: 'Stress', value: result.prosodyDetail?.stress },
+                        { label: 'Rhythm', value: result.prosodyDetail?.rhythm },
+                        { label: 'Continuity', value: result.prosodyDetail?.continuity },
                       ].map(({ label, value }) => (
                         <div key={label} className="flex items-center justify-between">
                           <span className="text-fuchsia-300/60 text-[10px]">{label}</span>
-                          <span className={`text-[11px] font-semibold ${value >= 80 ? 'text-green-300' : value >= 60 ? 'text-yellow-300' : 'text-red-300'}`}>{value}%</span>
+                          {value != null
+                            ? <span className={`text-[11px] font-semibold ${value >= 80 ? 'text-green-300' : value >= 60 ? 'text-yellow-300' : 'text-red-300'}`}>{value}%</span>
+                            : <span className="text-fuchsia-400/40 text-[11px]">—</span>
+                          }
                         </div>
                       ))}
+                      {!result.prosodyDetail && (
+                        <div className="col-span-2 text-fuchsia-400/40 text-[10px] mt-0.5">Azure chưa trả về điểm chi tiết</div>
+                      )}
                     </div>
                   )}
                 </div>
