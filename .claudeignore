@@ -1,0 +1,23 @@
+# Build output and dependencies
+node_modules/
+dist/
+
+# Large static data files (read-only reference data, rarely need editing)
+src/commonWordDetails.js
+src/commonWords.js
+src/data.js
+
+# Lock files
+package-lock.json
+
+# Temp and log files
+tmp-*.txt
+*.log
+vite.stdout.log
+vite.stderr.log
+
+# Other AI assistant files
+GEMINI.md
+
+# Git internals
+.git/

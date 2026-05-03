@@ -336,6 +336,26 @@ export async function deleteWord(id) {
   if (error) throw error
 }
 
+export async function deleteWordsBulk(ids) {
+  const client = requireSupabase()
+  if (!ids?.length) return
+  const BATCH = 100
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const { error } = await client.from('words').delete().in('id', ids.slice(i, i + BATCH))
+    if (error) throw error
+  }
+}
+
+export async function deleteSentencesBulk(ids) {
+  const client = requireSupabase()
+  if (!ids?.length) return
+  const BATCH = 100
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const { error } = await client.from('sentences').delete().in('id', ids.slice(i, i + BATCH))
+    if (error) throw error
+  }
+}
+
 export async function findOrCreateWord(word, meta = {}) {
   const client = requireSupabase()
   const normalized = normalizeWord(word)
