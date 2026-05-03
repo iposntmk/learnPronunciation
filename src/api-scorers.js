@@ -621,12 +621,21 @@ export async function scoreSentenceAzure(audioBlob, referenceText, subscriptionK
   }
 
   const nbest = data.NBest?.[0]
+  console.log('[Azure sentence] ProsodyAssessment raw:', JSON.stringify(nbest?.ProsodyAssessment ?? nbest?.PronunciationAssessment?.ProsodyAssessment ?? null))
   const spokenText = (nbest?.Display || nbest?.Lexical || '').trim()
   const overallScore = Math.round(nbest?.PronScore ?? nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.PronScore ?? 0)
   const accuracyScore = Math.round(nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.AccuracyScore ?? overallScore)
   const fluencyScore = Math.round(nbest?.FluencyScore ?? nbest?.PronunciationAssessment?.FluencyScore ?? 0)
   const completenessScore = Math.round(nbest?.CompletenessScore ?? nbest?.PronunciationAssessment?.CompletenessScore ?? 0)
   const prosodyScore = Math.round(nbest?.ProsodyScore ?? nbest?.PronunciationAssessment?.ProsodyScore ?? 0)
+
+  const prosodyRaw = nbest?.ProsodyAssessment ?? nbest?.PronunciationAssessment?.ProsodyAssessment ?? null
+  const prosodyDetail = prosodyRaw ? {
+    pitch: Math.round(prosodyRaw.PitchScore ?? prosodyRaw.IntonationScore ?? 0),
+    stress: Math.round(prosodyRaw.StressScore ?? 0),
+    rhythm: Math.round(prosodyRaw.RhythmScore ?? 0),
+    continuity: Math.round(prosodyRaw.ContinuityScore ?? prosodyRaw.BreakScore ?? 0),
+  } : null
 
   const phonemeMap = AZURE_PHONEME_MAPS[language] || AZURE_TO_IPA_EN
   const words = nbest?.Words || []
@@ -688,6 +697,7 @@ export async function scoreSentenceAzure(audioBlob, referenceText, subscriptionK
     fluencyScore,
     completenessScore,
     prosodyScore,
+    prosodyDetail,
     words: sentenceWords,
     azureIpa,
   }

@@ -3413,6 +3413,7 @@ function compactSentenceResultForSave(result) {
     fluencyScore: result.fluencyScore,
     completenessScore: result.completenessScore,
     prosodyScore: result.prosodyScore,
+    prosodyDetail: result.prosodyDetail ?? null,
     words: result.words || [],
     azureIpa: result.azureIpa || '',
     phonemes: (result.phonemes || []).slice(0, 80),
@@ -3426,6 +3427,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
   const [result, setResult] = useState(initialResult)
   const [showPhonemeDetails, setShowPhonemeDetails] = useState(false)
   const [showWordDetails, setShowWordDetails] = useState(false)
+  const [showProsodyDetail, setShowProsodyDetail] = useState(false)
   const [visiblePhonemeLimit, setVisiblePhonemeLimit] = useState(48)
   const [recordingUrl, setRecordingUrl] = useState(null)
   const [isPlayingBack, setIsPlayingBack] = useState(false)
@@ -3456,6 +3458,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
     setResult(null); onResultChange?.(null)
     setShowPhonemeDetails(false)
     setShowWordDetails(false)
+    setShowProsodyDetail(false)
     setVisiblePhonemeLimit(48)
     setRecordingUrl(null)
     navigator.mediaDevices.getUserMedia({ audio: true })
@@ -3559,21 +3562,45 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
           {result && (
             <>
               <div className="mt-3 grid grid-cols-2 gap-1.5">
-                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5">
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 flex items-center justify-between">
                   <div className="text-white/45 text-[10px] uppercase tracking-wide">Overall</div>
-                  <div className={`text-lg font-bold leading-tight ${scoreColor(result.overall)}`}>{result.overall}%</div>
+                  <div className={`text-sm font-bold ${scoreColor(result.overall)}`}>{result.overall}%</div>
                 </div>
-                <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/10 px-3 py-1.5">
-                  <div className="text-fuchsia-200/70 text-[10px] uppercase tracking-wide">Intonation</div>
-                  <div className="text-lg font-bold leading-tight text-fuchsia-100">{result.prosodyScore ?? 0}%</div>
+                <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/10 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => result.prosodyDetail && setShowProsodyDetail(v => !v)}
+                    className={`w-full px-3 py-1 flex items-center justify-between ${result.prosodyDetail ? 'active:scale-[0.99] cursor-pointer' : 'cursor-default'}`}
+                  >
+                    <div className="text-fuchsia-200/70 text-[10px] uppercase tracking-wide flex items-center gap-1">
+                      Intonation
+                      {result.prosodyDetail && <span className="text-fuchsia-400/60 text-[9px]">{showProsodyDetail ? '▲' : '▼'}</span>}
+                    </div>
+                    <div className="text-sm font-bold text-fuchsia-100">{result.prosodyScore ?? 0}%</div>
+                  </button>
+                  {showProsodyDetail && result.prosodyDetail && (
+                    <div className="px-3 pb-2 border-t border-fuchsia-400/15 grid grid-cols-2 gap-x-3 gap-y-1 mt-1">
+                      {[
+                        { label: 'Pitch', value: result.prosodyDetail.pitch },
+                        { label: 'Stress', value: result.prosodyDetail.stress },
+                        { label: 'Rhythm', value: result.prosodyDetail.rhythm },
+                        { label: 'Continuity', value: result.prosodyDetail.continuity },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex items-center justify-between">
+                          <span className="text-fuchsia-300/60 text-[10px]">{label}</span>
+                          <span className={`text-[11px] font-semibold ${value >= 80 ? 'text-green-300' : value >= 60 ? 'text-yellow-300' : 'text-red-300'}`}>{value}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5">
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 flex items-center justify-between">
                   <div className="text-white/45 text-[10px] uppercase tracking-wide">Accuracy</div>
-                  <div className="text-base font-bold leading-tight text-white">{result.accuracyScore ?? 0}%</div>
+                  <div className="text-sm font-bold text-white">{result.accuracyScore ?? 0}%</div>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5">
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 flex items-center justify-between">
                   <div className="text-white/45 text-[10px] uppercase tracking-wide">Fluency</div>
-                  <div className="text-base font-bold leading-tight text-white">{result.fluencyScore ?? 0}%</div>
+                  <div className="text-sm font-bold text-white">{result.fluencyScore ?? 0}%</div>
                 </div>
               </div>
 
