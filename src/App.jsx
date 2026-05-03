@@ -3310,7 +3310,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
           placeholder="Search sentence or topic"
           className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/25 outline-none"
         />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <select value={languageFilter} onChange={e => setLanguageFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
             <option value="all">All languages</option>
             {WORD_LANGUAGES.map(language => <option key={language} value={language}>{LANGUAGE_LABEL[language] || language}</option>)}
@@ -3323,11 +3323,21 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
             <option value="all">All topics</option>
             {topics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
           </select>
-          <select value={learnedFilter} onChange={e => setLearnedFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
-            <option value="all">Tất cả</option>
-            <option value="unlearned">Chưa học</option>
-            <option value="learned">Đã học ✓</option>
-          </select>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {[
+            ['all', `Tất cả · ${items.length}`],
+            ['unlearned', `Chưa học · ${items.filter(i => !sentenceProgress[i.id]?.learned).length}`],
+            ['learned', `Đã học · ${items.filter(i => sentenceProgress[i.id]?.learned).length}`],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setLearnedFilter(key)}
+              className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${learnedFilter === key ? 'bg-emerald-400 text-gray-950 border-emerald-300' : 'bg-white/5 text-white/60 border-white/10'}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {loading && items.length === 0 && <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-white/50 text-sm">Loading sentences...</div>}
