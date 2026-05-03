@@ -3517,7 +3517,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
       }))
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-56">
+    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-80">
       <audio ref={audioRef} className="hidden" />
       <div className="px-4 pt-6 pb-2 flex items-center gap-3">
         <button onClick={onBack} aria-label="Back" className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/70 hover:bg-white/10 transition-colors">
@@ -3637,65 +3637,64 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
         </div>
       </div>
 
-      <div className="fixed left-1/2 bottom-[4.75rem] z-30 w-full max-w-sm -translate-x-1/2 px-4 pt-3 pb-3 rounded-t-[2rem] bg-gradient-to-t from-[#0f0f1a] via-[#0f0f1a]/95 to-transparent flex flex-col gap-2">
+      <div className="fixed left-1/2 bottom-[4.75rem] z-30 w-full max-w-sm -translate-x-1/2 px-4 pt-2 pb-2 rounded-t-[2rem] bg-gradient-to-t from-[#0f0f1a] via-[#0f0f1a]/95 to-transparent flex flex-col gap-1.5">
         {result && (
           <button
             type="button"
             onClick={() => onMarkDone?.(!isLearned)}
-            className={`w-full rounded-2xl py-2.5 text-sm font-bold flex items-center justify-center gap-2 border transition-all ${isLearned ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/8 border-white/15 text-white/55'}`}
+            className={`w-full rounded-xl py-1.5 text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${isLearned ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/8 border-white/15 text-white/50'}`}
           >
-            {isLearned ? <CheckSquare size={16} /> : <Square size={16} />}
+            {isLearned ? <CheckSquare size={14} /> : <Square size={14} />}
             {isLearned ? 'Đã học ✓' : 'Done'}
           </button>
         )}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           <button
             type="button"
             onClick={() => speakNeural(sentenceItem.sentence, lang)}
-            className="w-full rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-300 py-3 text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-2"
+            className="w-full rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-300 py-2 text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-2"
           >
-            <Volume2 size={16} />
+            <Volume2 size={15} />
             Model Audio
           </button>
           <button
             type="button"
             onClick={playbackRecording}
             disabled={!recordingUrl}
-            className={`w-full rounded-2xl py-3 text-sm font-semibold active:scale-95 disabled:opacity-40 transition-transform border flex items-center justify-center gap-2 ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}
+            className={`w-full rounded-2xl py-2 text-sm font-semibold active:scale-95 disabled:opacity-40 transition-transform border flex items-center justify-center gap-2 ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}
           >
-            {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
-            {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
+            {isPlayingBack ? <Square size={15} /> : <Play size={15} />}
+            {isPlayingBack ? 'Stop' : 'Your Recording'}
           </button>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onPrev}
-            className="w-14 h-16 shrink-0 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/40 active:scale-95 transition-transform disabled:opacity-20"
+            className="w-12 h-14 shrink-0 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/40 active:scale-95 transition-transform disabled:opacity-20"
             disabled={!hasPrev || phase === 'recording' || phase === 'scoring'}
             aria-label="Previous sentence"
           >
-            <ChevronLeft size={24} />
+            <ChevronLeft size={22} />
           </button>
 
           {phase === 'recording' ? (
             <button
               type="button"
               onClick={stopRecording}
-              className="flex-1 rounded-2xl border-2 border-red-500/50 bg-red-600/20 py-5 text-red-400 shadow-lg shadow-red-900/20 active:scale-95 transition-transform flex flex-col items-center justify-center"
+              className="flex-1 rounded-2xl border-2 border-red-500/50 bg-red-600/20 py-4 text-red-400 shadow-lg shadow-red-900/20 active:scale-95 transition-transform flex flex-col items-center justify-center"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                <span className="font-bold text-lg">STOP</span>
-                <span className="font-bold tabular-nums text-red-300 text-xl">{countdown}s</span>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                <span className="font-bold text-base">STOP</span>
+                <span className="font-bold tabular-nums text-red-300 text-lg">{countdown}s</span>
               </div>
-              <div className="text-[10px] font-bold opacity-60 mt-0.5 uppercase tracking-widest">Tap to finish</div>
             </button>
           ) : phase === 'scoring' ? (
             <button
               type="button"
               disabled
-              className="flex-1 rounded-2xl border border-white/10 bg-white/5 py-5 text-white/50 flex items-center justify-center gap-2"
+              className="flex-1 rounded-2xl border border-white/10 bg-white/5 py-4 text-white/50 flex items-center justify-center gap-2"
             >
               <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
               <span>Analyzing...</span>
@@ -3704,9 +3703,9 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
             <button
               type="button"
               onClick={startRecording}
-              className="flex-1 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 py-5 text-lg font-bold text-white shadow-lg shadow-red-900/30 active:scale-95 transition-transform flex items-center justify-center gap-3"
+              className="flex-1 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 py-4 text-base font-bold text-white shadow-lg shadow-red-900/30 active:scale-95 transition-transform flex items-center justify-center gap-2"
             >
-              <Mic size={24} />
+              <Mic size={22} />
               {result ? 'Retry' : `Speak (${recordingDurationSetting || 5}s)`}
             </button>
           )}
@@ -3714,11 +3713,11 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
           <button
             type="button"
             onClick={onNext}
-            className="w-14 h-16 shrink-0 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/40 active:scale-95 transition-transform disabled:opacity-20"
+            className="w-12 h-14 shrink-0 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center text-white/40 active:scale-95 transition-transform disabled:opacity-20"
             disabled={!hasNext || phase === 'recording' || phase === 'scoring'}
             aria-label="Next sentence"
           >
-            <ChevronRight size={24} />
+            <ChevronRight size={22} />
           </button>
         </div>
       </div>
