@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react'
-import { Mic, Volume2, Search, ChevronLeft, ChevronRight, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings, Shield, LogOut, Pencil, PlusCircle, Sprout } from 'lucide-react'
+import { CheckSquare, Mic, Volume2, Search, ChevronLeft, ChevronRight, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings, Shield, LogOut, Pencil, PlusCircle, Sprout } from 'lucide-react'
 import {
   SOUNDS, VOWEL_GROUPS, CONSONANT_GROUPS,
   SPANISH_SOUNDS, SPANISH_VOWEL_GROUPS, SPANISH_CONSONANT_GROUPS, SPANISH_PHONEME_INFO,
@@ -13,7 +13,7 @@ import { COMMON_3000_LEVELS } from './commonWords.js'
 import AuthGate from './AuthGate.jsx'
 import AdminScreen from './AdminScreen.jsx'
 import { supabase } from './supabaseClient.js'
-import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listMyProgress, listMySentenceProgress, listSentences, listSentenceTopics, listWords, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
+import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listMyProgress, listMySentenceProgress, listSentences, listSentenceTopics, listWords, markSentenceLearned, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
 
 // ─── RACHEL'S ENGLISH LINKS ────────────────────────────────────────────────
 
@@ -3230,6 +3230,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
   const [levelFilter, setLevelFilter] = useState('all')
   const [topicFilter, setTopicFilter] = useState('all')
   const [languageFilter, setLanguageFilter] = useState('all')
+  const [learnedFilter, setLearnedFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [topics, setTopics] = useState([])
@@ -3309,7 +3310,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
           placeholder="Search sentence or topic"
           className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/25 outline-none"
         />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <select value={languageFilter} onChange={e => setLanguageFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
             <option value="all">All languages</option>
             {WORD_LANGUAGES.map(language => <option key={language} value={language}>{LANGUAGE_LABEL[language] || language}</option>)}
@@ -3322,12 +3323,23 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
             <option value="all">All topics</option>
             {topics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
           </select>
+          <select value={learnedFilter} onChange={e => setLearnedFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
+            <option value="all">Tất cả</option>
+            <option value="unlearned">Chưa học</option>
+            <option value="learned">Đã học ✓</option>
+          </select>
         </div>
 
         {loading && items.length === 0 && <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-white/50 text-sm">Loading sentences...</div>}
         {error && <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-4 text-red-200 text-sm">{error}</div>}
 
-        {items.map(item => {
+        {items
+          .filter(item => {
+            if (learnedFilter === 'learned') return Boolean(sentenceProgress[item.id]?.learned)
+            if (learnedFilter === 'unlearned') return !sentenceProgress[item.id]?.learned
+            return true
+          })
+          .map(item => {
           const progress = sentenceProgress[item.id] || null
           const itemLanguage = normalizeLanguage(item.language || 'english')
           const languageLabel = LANGUAGE_LABEL[itemLanguage] || itemLanguage
@@ -3336,11 +3348,11 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
               key={item.id}
               type="button"
               onClick={() => onPracticeSentence(item, items.indexOf(item), items)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-left active:scale-[0.99] transition-transform"
+              className={`rounded-2xl border px-4 py-4 text-left active:scale-[0.99] transition-transform ${progress?.learned ? 'border-emerald-400/25 bg-emerald-500/5' : 'border-white/10 bg-white/5'}`}
             >
               <div className="flex items-start gap-3">
-                <div className="mt-1 w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-400/20 flex items-center justify-center text-cyan-200 font-bold">
-                  <Mic size={18} />
+                <div className={`mt-1 w-10 h-10 rounded-2xl border flex items-center justify-center font-bold ${progress?.learned ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300' : 'bg-cyan-500/15 border-cyan-400/20 text-cyan-200'}`}>
+                  {progress?.learned ? <CheckSquare size={18} /> : <Mic size={18} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-white font-semibold leading-snug">{item.sentence}</div>
@@ -3349,6 +3361,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
                     <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_FLAG[itemLanguage] || ''} {languageLabel}</span>
                     {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
                     {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
+                    {progress?.learned && <span className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-2 py-1 text-emerald-300 font-semibold">✓ Đã học</span>}
                     {progress && Number.isFinite(progress.score) && (
                       <span className={`rounded-lg border px-2 py-1 ${scoreBg(progress.score)} ${scoreColor(progress.score)}`}>Score {progress.score}%</span>
                     )}
@@ -3396,7 +3409,7 @@ function compactSentenceResultForSave(result) {
   }
 }
 
-function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, onNext, onPrev, hasNext, hasPrev, recordingDurationSetting, initialResult = null, onResultChange }) {
+function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, onNext, onPrev, hasNext, hasPrev, recordingDurationSetting, initialResult = null, onResultChange, isLearned = false, onMarkDone }) {
   const [phase, setPhase] = useState(initialResult ? 'result' : 'ready')
   const [countdown, setCountdown] = useState(recordingDurationSetting || 5)
   const [errorMsg, setErrorMsg] = useState(null)
@@ -3625,6 +3638,16 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
       </div>
 
       <div className="fixed left-1/2 bottom-[4.75rem] z-30 w-full max-w-sm -translate-x-1/2 px-4 pt-3 pb-3 rounded-t-[2rem] bg-gradient-to-t from-[#0f0f1a] via-[#0f0f1a]/95 to-transparent flex flex-col gap-2">
+        {result && (
+          <button
+            type="button"
+            onClick={() => onMarkDone?.(!isLearned)}
+            className={`w-full rounded-2xl py-2.5 text-sm font-bold flex items-center justify-center gap-2 border transition-all ${isLearned ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'bg-white/8 border-white/15 text-white/55'}`}
+          >
+            {isLearned ? <CheckSquare size={16} /> : <Square size={16} />}
+            {isLearned ? 'Đã học ✓' : 'Done'}
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -4016,6 +4039,16 @@ function MainApp({ profile }) {
     await refreshSentenceProgress()
   }
 
+  const handleMarkSentenceLearned = async (learned) => {
+    if (!practiceSentence) return
+    try {
+      await markSentenceLearned(practiceSentence.id, learned)
+      await refreshSentenceProgress()
+    } catch (err) {
+      console.warn('[Supabase] markSentenceLearned failed:', err.message)
+    }
+  }
+
   const soundWords = selectedSound?.words || []
   const onNextWord = practiceWordIdx >= 0 && practiceWordIdx < soundWords.length - 1
     ? () => { const i = practiceWordIdx + 1; setPracticeWord(soundWords[i]); setPracticeWordIdx(i) }
@@ -4103,6 +4136,8 @@ function MainApp({ profile }) {
           hasNext={currentSentenceIdx < sentenceItems.length - 1}
           hasPrev={currentSentenceIdx > 0}
           recordingDurationSetting={sentenceRecordingDurationSetting}
+          isLearned={Boolean(sentenceProgress[practiceSentence.id]?.learned)}
+          onMarkDone={handleMarkSentenceLearned}
         />
       )}
       <BottomNav

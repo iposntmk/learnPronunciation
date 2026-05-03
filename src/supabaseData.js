@@ -135,6 +135,20 @@ export async function listSentenceTopics() {
   return topics
 }
 
+export async function markSentenceLearned(sentenceId, learned = true) {
+  const client = requireSupabase()
+  const { data: { user }, error: userError } = await client.auth.getUser()
+  if (userError) throw userError
+  if (!user) throw new Error('Authentication required.')
+  const { error } = await client
+    .from('user_sentence_progress')
+    .upsert(
+      { user_id: user.id, sentence_id: sentenceId, is_learned: learned },
+      { onConflict: 'user_id,sentence_id' }
+    )
+  if (error) throw error
+}
+
 export async function listMySentenceProgress() {
   const client = requireSupabase()
   const { data, error } = await client
