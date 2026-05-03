@@ -3425,6 +3425,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
   const [errorMsg, setErrorMsg] = useState(null)
   const [result, setResult] = useState(initialResult)
   const [showPhonemeDetails, setShowPhonemeDetails] = useState(false)
+  const [showWordDetails, setShowWordDetails] = useState(false)
   const [visiblePhonemeLimit, setVisiblePhonemeLimit] = useState(48)
   const [recordingUrl, setRecordingUrl] = useState(null)
   const [isPlayingBack, setIsPlayingBack] = useState(false)
@@ -3454,6 +3455,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
     setErrorMsg(null)
     setResult(null); onResultChange?.(null)
     setShowPhonemeDetails(false)
+    setShowWordDetails(false)
     setVisiblePhonemeLimit(48)
     setRecordingUrl(null)
     navigator.mediaDevices.getUserMedia({ audio: true })
@@ -3556,63 +3558,69 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
 
           {result && (
             <>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  <div className="text-white/45 text-[11px] uppercase tracking-wide">Overall</div>
-                  <div className={`mt-1 text-2xl font-bold ${scoreColor(result.overall)}`}>{result.overall}%</div>
+              <div className="mt-3 grid grid-cols-2 gap-1.5">
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5">
+                  <div className="text-white/45 text-[10px] uppercase tracking-wide">Overall</div>
+                  <div className={`text-lg font-bold leading-tight ${scoreColor(result.overall)}`}>{result.overall}%</div>
                 </div>
-                <div className="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/10 px-3 py-3">
-                  <div className="text-fuchsia-200/70 text-[11px] uppercase tracking-wide">Intonation</div>
-                  <div className="mt-1 text-2xl font-bold text-fuchsia-100">{result.prosodyScore ?? 0}%</div>
+                <div className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/10 px-3 py-1.5">
+                  <div className="text-fuchsia-200/70 text-[10px] uppercase tracking-wide">Intonation</div>
+                  <div className="text-lg font-bold leading-tight text-fuchsia-100">{result.prosodyScore ?? 0}%</div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  <div className="text-white/45 text-[11px] uppercase tracking-wide">Accuracy</div>
-                  <div className="mt-1 text-xl font-bold text-white">{result.accuracyScore ?? 0}%</div>
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5">
+                  <div className="text-white/45 text-[10px] uppercase tracking-wide">Accuracy</div>
+                  <div className="text-base font-bold leading-tight text-white">{result.accuracyScore ?? 0}%</div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  <div className="text-white/45 text-[11px] uppercase tracking-wide">Fluency</div>
-                  <div className="mt-1 text-xl font-bold text-white">{result.fluencyScore ?? 0}%</div>
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5">
+                  <div className="text-white/45 text-[10px] uppercase tracking-wide">Fluency</div>
+                  <div className="text-base font-bold leading-tight text-white">{result.fluencyScore ?? 0}%</div>
                 </div>
               </div>
 
               {wordRows.length > 0 && (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-white/45 text-[11px] uppercase tracking-wide">Azure Sentence</div>
-                    <div className="text-white/35 text-[11px]">tap tung tu</div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {wordRows.map((item, index) => {
-                      const cleanWord = cleanPracticeWord(item.text)
-                      return (
-                        <button
-                          key={`${item.text}-${index}`}
-                          type="button"
-                          onClick={() => cleanWord && onPracticeWord?.(cleanWord)}
-                          disabled={!cleanWord}
-                          className={`rounded-xl border px-2.5 py-2 text-left active:scale-95 disabled:opacity-40 ${scoreTextBg(item.score)}`}
-                          title={cleanWord ? `Practice ${cleanWord}` : undefined}
-                        >
-                          <div className="font-semibold text-sm leading-tight">{item.text}</div>
-                          <div className="mt-0.5 text-[11px] opacity-75">{Math.round(item.score ?? 0)}%</div>
-                        </button>
-                      )
-                    })}
-                  </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowWordDetails(v => !v)}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left flex items-center justify-between active:scale-[0.99]"
+                  >
+                    <span className="text-white/55 text-[11px] uppercase tracking-wide">Azure Sentence</span>
+                    <span className="text-white/35 text-[11px]">{showWordDetails ? 'ẩn' : `tap từng từ (${wordRows.length})`}</span>
+                  </button>
+                  {showWordDetails && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {wordRows.map((item, index) => {
+                        const cleanWord = cleanPracticeWord(item.text)
+                        return (
+                          <button
+                            key={`${item.text}-${index}`}
+                            type="button"
+                            onClick={() => cleanWord && onPracticeWord?.(cleanWord)}
+                            disabled={!cleanWord}
+                            className={`rounded-xl border px-2.5 py-2 text-left active:scale-95 disabled:opacity-40 ${scoreTextBg(item.score)}`}
+                            title={cleanWord ? `Practice ${cleanWord}` : undefined}
+                          >
+                            <div className="font-semibold text-sm leading-tight">{item.text}</div>
+                            <div className="mt-0.5 text-[11px] opacity-75">{Math.round(item.score ?? 0)}%</div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="text-white/45 text-[11px] uppercase tracking-wide">Heard</div>
-                <div className="mt-1 text-white text-sm leading-snug">{result.spokenText || '-'}</div>
-                {showPhonemeDetails && result.azureIpa && <div className="mt-2 text-cyan-100/90 text-xs font-mono leading-relaxed break-all">/{result.azureIpa}/</div>}
+              <div className="mt-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                <div className="text-white/45 text-[10px] uppercase tracking-wide">Heard</div>
+                <div className="mt-0.5 text-white text-sm leading-snug">{result.spokenText || '-'}</div>
+                {showPhonemeDetails && result.azureIpa && <div className="mt-1.5 text-cyan-100/90 text-xs font-mono leading-relaxed break-all">/{result.azureIpa}/</div>}
               </div>
 
-              <div className="mt-4">
+              <div className="mt-2">
                 <button
                   type="button"
                   onClick={() => setShowPhonemeDetails(value => !value)}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-semibold text-white/70 active:scale-[0.99]"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm font-semibold text-white/70 active:scale-[0.99]"
                 >
                   {showPhonemeDetails ? 'Hide phoneme details' : `Show phoneme details (${phonemeRows.length})`}
                 </button>
