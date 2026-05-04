@@ -8,7 +8,7 @@ import {
 } from './data.js'
 import { scoreSentence, scoreWord } from './scorer.js'
 import { getAzureUsageSummary } from './azureUsage.js'
-import { speakNeural, speakPhoneme } from './tts.js'
+import { speakNeural, speakSentenceNeural, speakPhoneme } from './tts.js'
 import { COMMON_3000_LEVELS } from './commonWords.js'
 import AuthGate from './AuthGate.jsx'
 import AdminScreen from './AdminScreen.jsx'
@@ -1182,6 +1182,9 @@ const DEFAULT_PRACTICE_SETTINGS = {
   showIncorrectAction: true,
   showTranslateAction: true,
   showDictionarySubtitle: true,
+  useBrowserTTS: false,
+  readSentenceAloud: false,
+  sentenceWordExpanded: false,
 }
 
 function loadPracticeSettings() {
@@ -3518,13 +3521,13 @@ function buildSentenceImprovementTips(result, wordRows) {
   return tips.slice(0, 5)
 }
 
-function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, onNext, onPrev, hasNext, hasPrev, recordingDurationSetting, initialResult = null, onResultChange, isLearned = false, onMarkDone }) {
+function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, onNext, onPrev, hasNext, hasPrev, recordingDurationSetting, initialResult = null, onResultChange, isLearned = false, onMarkDone, practiceSettings }) {
   const [phase, setPhase] = useState(initialResult ? 'result' : 'ready')
   const [countdown, setCountdown] = useState(recordingDurationSetting || 5)
   const [errorMsg, setErrorMsg] = useState(null)
   const [result, setResult] = useState(initialResult)
   const [showPhonemeDetails, setShowPhonemeDetails] = useState(false)
-  const [showWordDetails, setShowWordDetails] = useState(false)
+  const [showWordDetails, setShowWordDetails] = useState(() => practiceSettings?.sentenceWordExpanded ?? false)
   const [showProsodyDetail, setShowProsodyDetail] = useState(false)
   const [visiblePhonemeLimit, setVisiblePhonemeLimit] = useState(48)
   const [recordingUrl, setRecordingUrl] = useState(null)
@@ -3545,6 +3548,18 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
     if (recordingUrl) URL.revokeObjectURL(recordingUrl)
   }, [recordingUrl])
 
+  // Reset word-details expansion per sentence based on setting
+  useEffect(() => {
+    setShowWordDetails(practiceSettings?.sentenceWordExpanded ?? false)
+  }, [sentenceItem?.id, practiceSettings?.sentenceWordExpanded])
+
+  // Auto-speak model audio when a sentence loads
+  useEffect(() => {
+    if (!practiceSettings?.readSentenceAloud || !sentenceItem?.sentence) return
+    const t = setTimeout(() => speakSentenceNeural(sentenceItem.sentence, lang), 400)
+    return () => clearTimeout(t)
+  }, [sentenceItem?.id, practiceSettings?.readSentenceAloud, lang, sentenceItem?.sentence])
+
   const stopRecording = useCallback(() => {
     clearTimeout(timeoutRef.current)
     clearInterval(countdownRef.current)
@@ -3555,7 +3570,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
     setErrorMsg(null)
     setResult(null); onResultChange?.(null)
     setShowPhonemeDetails(false)
-    setShowWordDetails(false)
+    setShowWordDetails(practiceSettings?.sentenceWordExpanded ?? false)
     setShowProsodyDetail(false)
     setVisiblePhonemeLimit(48)
     setRecordingUrl(null)
@@ -3827,7 +3842,7 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
         <div className="grid grid-cols-2 gap-1.5">
           <button
             type="button"
-            onClick={() => speakNeural(sentenceItem.sentence, lang)}
+            onClick={() => speakSentenceNeural(sentenceItem.sentence, lang)}
             className="w-full rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-300 py-2 text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-2"
           >
             <Volume2 size={15} />
@@ -3922,7 +3937,10 @@ function BottomNav({
   ]
   if (canAdmin) items.push({ label: 'Admin', icon: Shield, target: 'admin', active: screen === 'admin' })
   const settingItems = [
-    ['readNewWordAloud', 'Read aloud when a new word appears'],
+    ['useBrowserTTS', 'Use browser speech (instead of Azure Neural)'],
+    ['readNewWordAloud', 'Auto-play audio when a new word appears'],
+    ['readSentenceAloud', 'Auto-play audio when a sentence loads'],
+    ['sentenceWordExpanded', 'Tap từng từ: show word scores by default'],
     ['unlearnedNavOnly', 'Next/Back only unlearned words'],
     ['autoTranslateOnLoad', 'Automatically translate new words'],
     ['autoExpandUsage', 'Automatically expand usage'],
@@ -4313,6 +4331,7 @@ function MainApp({ profile }) {
           recordingDurationSetting={sentenceRecordingDurationSetting}
           isLearned={Boolean(sentenceProgress[practiceSentence.id]?.learned)}
           onMarkDone={handleMarkSentenceLearned}
+          practiceSettings={practiceSettings}
         />
       )}
       <BottomNav
