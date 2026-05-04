@@ -53,6 +53,179 @@ async function audioBlobToPcmWav(blob) {
   return new Blob([wavBuf], { type: 'audio/wav' })
 }
 
+function clampScore(value) {
+  const number = finiteNumber(value)
+  if (!Number.isFinite(number)) return null
+  return Math.round(Math.max(0, Math.min(100, number)))
+}
+
+function finiteNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const number = finiteNumber(value)
+    if (number != null) return number
+  }
+  return null
+}
+
+function firstScore(...values) {
+  for (const value of values) {
+    const score = clampScore(value)
+    if (score != null) return score
+  }
+  return null
+}
+
+function getCaseInsensitive(obj, key) {
+  if (!obj || typeof obj !== 'object') return undefined
+  if (Object.prototype.hasOwnProperty.call(obj, key)) return obj[key]
+  const found = Object.keys(obj).find(item => item.toLowerCase() === key.toLowerCase())
+  return found ? obj[found] : undefined
+}
+
+function getPathValue(obj, path) {
+  return path.reduce((current, key) => getCaseInsensitive(current, key), obj)
+}
+
+function pickScore(obj, paths) {
+  for (const path of paths) {
+    const value = Array.isArray(path) ? getPathValue(obj, path) : getCaseInsensitive(obj, path)
+    const score = clampScore(value)
+    if (score != null) return score
+  }
+  return null
+}
+
+function asArray(value) {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') return value.split(/[,\s]+/).filter(Boolean)
+  return []
+}
+
+function collectFeedbackConfidence(feedback, names) {
+  const matches = []
+  const wanted = new Set(names.map(name => name.toLowerCase()))
+
+  const visit = node => {
+    if (!node || typeof node !== 'object') return
+    Object.entries(node).forEach(([key, value]) => {
+      const lowerKey = key.toLowerCase()
+      if (wanted.has(lowerKey)) {
+        const confidence = typeof value === 'object'
+          ? firstNumber(
+              getCaseInsensitive(value, 'Confidence'),
+              getCaseInsensitive(value, 'confidence'),
+              getCaseInsensitive(value, 'SyllablePitchDeltaConfidence'),
+              getCaseInsensitive(value, 'syllablePitchDeltaConfidence'),
+              getCaseInsensitive(value, 'Score'),
+              getCaseInsensitive(value, 'score'),
+            )
+          : finiteNumber(value)
+        if (confidence != null) matches.push(confidence)
+      }
+
+      if (lowerKey === 'errortypes') {
+        const errorTypes = asArray(value).map(item => String(item).toLowerCase())
+        if (names.some(name => errorTypes.includes(name.toLowerCase()))) matches.push(100)
+      }
+
+      visit(value)
+    })
+  }
+
+  visit(feedback)
+  return matches
+}
+
+function maxFeedbackConfidence(feedback, names) {
+  const values = collectFeedbackConfidence(feedback, names)
+    .map(value => Number(value))
+    .filter(Number.isFinite)
+    .map(value => value <= 1 ? value * 100 : value)
+  return values.length ? clampScore(Math.max(...values)) : null
+}
+
+function normalizeProsodyFeedback(feedback) {
+  if (!feedback || typeof feedback !== 'object') return null
+  const normalized = {
+    monotone: maxFeedbackConfidence(feedback, ['Monotone']),
+    unexpectedBreak: maxFeedbackConfidence(feedback, ['UnexpectedBreak']),
+    missingBreak: maxFeedbackConfidence(feedback, ['MissingBreak']),
+  }
+  return Object.values(normalized).some(value => value != null) ? normalized : null
+}
+
+function normalizeWordProsodyFeedback(feedback, errorType) {
+  const normalized = normalizeProsodyFeedback(feedback) || {}
+  const errorTypes = asArray(errorType).map(item => String(item).toLowerCase())
+  if (errorTypes.includes('monotone') && normalized.monotone == null) normalized.monotone = 100
+  if (errorTypes.includes('unexpectedbreak') && normalized.unexpectedBreak == null) normalized.unexpectedBreak = 100
+  if (errorTypes.includes('missingbreak') && normalized.missingBreak == null) normalized.missingBreak = 100
+  return Object.values(normalized).some(value => value != null) ? normalized : null
+}
+
+function scoreFromConfidencePenalty(values) {
+  const penalties = values
+    .map(value => Number(value))
+    .filter(Number.isFinite)
+    .map(value => value <= 1 ? value * 100 : value)
+  if (!penalties.length) return null
+  return clampScore(100 - Math.max(...penalties))
+}
+
+function deriveProsodyDetailFromFeedback(words, prosodyScore, fluencyScore) {
+  const feedbackItems = (words || [])
+    .map(word => word?.PronunciationAssessment?.Feedback ?? word?.Feedback)
+    .filter(item => item && typeof item === 'object')
+
+  const pitchPenalty = feedbackItems.flatMap(item => collectFeedbackConfidence(item, ['Monotone']))
+  const breakPenalty = feedbackItems.flatMap(item => collectFeedbackConfidence(item, ['UnexpectedBreak', 'MissingBreak']))
+  const stressPenalty = feedbackItems.flatMap(item => collectFeedbackConfidence(item, ['Stress']))
+  const rhythmPenalty = feedbackItems.flatMap(item => collectFeedbackConfidence(item, ['Rhythm', 'SpeakingSpeed', 'Rate']))
+
+  return {
+    pitch: scoreFromConfidencePenalty(pitchPenalty),
+    stress: scoreFromConfidencePenalty(stressPenalty) ?? prosodyScore,
+    rhythm: scoreFromConfidencePenalty(rhythmPenalty) ?? fluencyScore ?? prosodyScore,
+    continuity: scoreFromConfidencePenalty(breakPenalty) ?? fluencyScore ?? prosodyScore,
+  }
+}
+
+function buildProsodyDetail(nbest, prosodyRaw, prosodyScore, fluencyScore) {
+  const sources = [prosodyRaw, nbest?.PronunciationAssessment, nbest].filter(Boolean)
+  const feedbackDetail = deriveProsodyDetailFromFeedback(nbest?.Words, prosodyScore, fluencyScore)
+  const rawDetail = {
+    pitch: firstScore(...sources.map(source => pickScore(source, ['PitchScore', 'IntonationScore', 'Pitch', 'Intonation']))),
+    stress: firstScore(...sources.map(source => pickScore(source, ['StressScore', 'WordStressScore', 'Stress']))),
+    rhythm: firstScore(...sources.map(source => pickScore(source, ['RhythmScore', 'SpeakingSpeedScore', 'RateScore', 'Rhythm']))),
+    continuity: firstScore(...sources.map(source => pickScore(source, ['ContinuityScore', 'BreakScore', 'BreaksScore', 'Continuity']))),
+  }
+  const rawScores = Object.values(rawDetail).filter(value => value != null)
+  const rawLooksUnavailable = rawScores.length > 0
+    && rawScores.every(value => value === 0)
+    && ((prosodyScore ?? 0) > 0 || (fluencyScore ?? 0) > 0)
+
+  const fallbackDetail = {
+    pitch: firstScore(feedbackDetail.pitch, prosodyScore),
+    stress: firstScore(feedbackDetail.stress, prosodyScore),
+    rhythm: firstScore(feedbackDetail.rhythm, fluencyScore, prosodyScore),
+    continuity: firstScore(feedbackDetail.continuity, fluencyScore, prosodyScore),
+  }
+
+  const detail = rawLooksUnavailable ? fallbackDetail : {
+    pitch: firstScore(rawDetail.pitch, fallbackDetail.pitch),
+    stress: firstScore(rawDetail.stress, fallbackDetail.stress),
+    rhythm: firstScore(rawDetail.rhythm, fallbackDetail.rhythm),
+    continuity: firstScore(rawDetail.continuity, fallbackDetail.continuity),
+  }
+
+  return Object.values(detail).some(value => value != null) ? detail : null
+}
+
 // ─── OPENAI WHISPER ────────────────────────────────────────────────────────
 
 export async function scoreWordOpenAI(audioBlob, phonemes, apiKey) {
@@ -578,87 +751,90 @@ export async function scoreSentenceAzure(audioBlob, referenceText, subscriptionK
   const wavDurationSeconds = wavBlob.size / (16000 * 2)
   recordAzureUsage(wavDurationSeconds)
 
-  const assessmentCfg = {
-    ReferenceText: cleanText,
-    GradingSystem: 'HundredMark',
-    Granularity: 'Phoneme',
-    Dimension: 'Comprehensive',
-    EnableMiscue: true,
-    EnableProsodyAssessment: true,
-  }
   const cleanKey = subscriptionKey.trim().replace(/[\r\n]/g, '')
   const cleanRegion = region.trim().replace(/[\r\n]/g, '')
-  const assessmentHeader = btoa(JSON.stringify(assessmentCfg)).replace(/[\r\n]/g, '')
 
-  const url = `https://${cleanRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${encodeURIComponent(language)}&format=detailed`
-  console.log('[Azure sentence] POST', url, '| text:', cleanText, '| keyLen:', cleanKey.length, '| keyPrefix:', cleanKey.slice(0, 6) + '...')
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Ocp-Apim-Subscription-Key': cleanKey,
-      'Content-Type': 'audio/wav',
-      'Pronunciation-Assessment': assessmentHeader,
-    },
-    body: wavBlob,
+  // Speech SDK trả về ProsodyAssessment sub-scores; REST API chỉ trả composite ProsodyScore
+  const sdk = await import('microsoft-cognitiveservices-speech-sdk')
+  const speechConfig = sdk.SpeechConfig.fromSubscription(cleanKey, cleanRegion)
+  speechConfig.speechRecognitionLanguage = language
+  speechConfig.outputFormat = sdk.OutputFormat.Detailed
+
+  const wavFile = new File([wavBlob], 'audio.wav', { type: 'audio/wav' })
+  const audioConfig = sdk.AudioConfig.fromWavFileInput(wavFile)
+
+  const pronunciationConfig = new sdk.PronunciationAssessmentConfig(
+    cleanText,
+    sdk.PronunciationAssessmentGradingSystem.HundredMark,
+    sdk.PronunciationAssessmentGranularity.Phoneme,
+    true,
+  )
+  pronunciationConfig.enableProsodyAssessment = true
+
+  const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig)
+  pronunciationConfig.applyTo(recognizer)
+
+  console.log('[Azure sentence SDK] config JSON:', pronunciationConfig.toJSON())
+  console.log('[Azure sentence SDK] recognizing | text:', cleanText, '| region:', cleanRegion)
+  const nbest = await new Promise((resolve, reject) => {
+    recognizer.recognizeOnceAsync(
+      sdkResult => {
+        recognizer.close()
+        if (sdkResult.reason !== sdk.ResultReason.RecognizedSpeech) {
+          const reasonName = sdk.ResultReason[sdkResult.reason] ?? sdkResult.reason
+          reject(new Error(`Azure không nhận ra giọng nói: ${reasonName}`))
+          return
+        }
+        const jsonStr = sdkResult.properties.getProperty(sdk.PropertyId.SpeechServiceResponse_JsonResult)
+        const data = JSON.parse(jsonStr)
+        resolve(data.NBest?.[0])
+      },
+      error => {
+        recognizer.close()
+        reject(new Error(`Azure SDK: ${error}`))
+      },
+    )
   })
-  console.log('[Azure sentence] response status:', resp.status, resp.statusText)
 
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => '')
-    console.error('[Azure sentence] error body:', txt)
-    const hint = resp.status === 401
-      ? ' — Key sai hoặc hết hạn. Kiểm tra lại GitHub Secret AZUREKEY.'
-      : resp.status === 403 ? ' — Không có quyền truy cập resource.'
-      : resp.status === 0 ? ' — CORS bị chặn.'
-      : ''
-    throw new Error(`Azure ${resp.status}${hint} ${txt.slice(0, 150)}`)
-  }
+  console.log('[Azure sentence SDK] nbest keys:', Object.keys(nbest || {}))
+  console.log('[Azure sentence SDK] PronunciationAssessment:', JSON.stringify(nbest?.PronunciationAssessment))
+  console.log('[Azure sentence SDK] ProsodyAssessment (flat):', JSON.stringify(nbest?.ProsodyAssessment))
 
-  const data = await resp.json()
-
-  if (data.RecognitionStatus !== 'Success') {
-    throw new Error(`Azure không nhận ra giọng nói: ${data.RecognitionStatus}`)
-  }
-
-  const nbest = data.NBest?.[0]
-  console.log('[Azure sentence] nbest keys:', Object.keys(nbest || {}))
-  console.log('[Azure sentence] PronunciationAssessment keys:', Object.keys(nbest?.PronunciationAssessment || {}))
   const spokenText = (nbest?.Display || nbest?.Lexical || '').trim()
-  const overallScore = Math.round(nbest?.PronScore ?? nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.PronScore ?? 0)
-  const accuracyScore = Math.round(nbest?.AccuracyScore ?? nbest?.PronunciationAssessment?.AccuracyScore ?? overallScore)
-  const fluencyScore = Math.round(nbest?.FluencyScore ?? nbest?.PronunciationAssessment?.FluencyScore ?? 0)
-  const completenessScore = Math.round(nbest?.CompletenessScore ?? nbest?.PronunciationAssessment?.CompletenessScore ?? 0)
-  const prosodyScore = Math.round(nbest?.ProsodyScore ?? nbest?.PronunciationAssessment?.ProsodyScore ?? 0)
+  const overallScore = firstScore(nbest?.PronScore, nbest?.PronunciationAssessment?.PronScore) ?? 0
+  const accuracyScore = firstScore(nbest?.AccuracyScore, nbest?.PronunciationAssessment?.AccuracyScore, overallScore) ?? overallScore
+  const fluencyScoreValue = firstScore(nbest?.FluencyScore, nbest?.PronunciationAssessment?.FluencyScore)
+  const completenessScoreValue = firstScore(nbest?.CompletenessScore, nbest?.PronunciationAssessment?.CompletenessScore)
+  const prosodyScoreValue = firstScore(nbest?.ProsodyScore, nbest?.PronunciationAssessment?.ProsodyScore)
+  const fluencyScore = fluencyScoreValue ?? 0
+  const completenessScore = completenessScoreValue ?? 0
+  const prosodyScore = prosodyScoreValue ?? 0
 
-  // Azure REST API trả về ProsodyAssessment sub-scores ở nhiều path khác nhau tuỳ version
   const prosodyRaw = nbest?.ProsodyAssessment
     ?? nbest?.PronunciationAssessment?.ProsodyAssessment
     ?? (nbest?.PronunciationAssessment?.PitchScore != null ? nbest.PronunciationAssessment : null)
     ?? null
-  console.log('[Azure sentence] prosodyRaw:', JSON.stringify(prosodyRaw))
-  const prosodyDetail = prosodyRaw ? {
-    pitch: Math.round(prosodyRaw.PitchScore ?? prosodyRaw.IntonationScore ?? 0),
-    stress: Math.round(prosodyRaw.StressScore ?? 0),
-    rhythm: Math.round(prosodyRaw.RhythmScore ?? 0),
-    continuity: Math.round(prosodyRaw.ContinuityScore ?? prosodyRaw.BreakScore ?? 0),
-  } : null
+  const prosodyDetail = buildProsodyDetail(nbest, prosodyRaw, prosodyScoreValue, fluencyScoreValue)
 
   const phonemeMap = AZURE_PHONEME_MAPS[language] || AZURE_TO_IPA_EN
   const words = nbest?.Words || []
   const sentenceWords = words.map((word, index) => {
+    const wordAssessment = word?.PronunciationAssessment || {}
+    const wordFeedback = wordAssessment.Feedback ?? word?.Feedback
     const phonemeScores = (word?.Phonemes || [])
       .map(phoneme => Number(phoneme?.AccuracyScore ?? phoneme?.PronunciationAssessment?.AccuracyScore))
       .filter(Number.isFinite)
     const score = Math.round(
       word?.AccuracyScore
-      ?? word?.PronunciationAssessment?.AccuracyScore
+      ?? wordAssessment.AccuracyScore
       ?? (phonemeScores.length ? phonemeScores.reduce((sum, item) => sum + item, 0) / phonemeScores.length : overallScore)
     )
     return {
       index,
       text: word?.Word || '',
       score,
-      errorType: word?.ErrorType || null,
+      errorType: word?.ErrorType || wordAssessment.ErrorType || null,
+      prosodyFeedback: normalizeWordProsodyFeedback(wordFeedback, word?.ErrorType || wordAssessment.ErrorType),
       audioOffset: (word?.Offset ?? 0) / 10_000_000,
       audioDuration: (word?.Duration ?? 0) / 10_000_000,
       phonemeCount: word?.Phonemes?.length || 0,

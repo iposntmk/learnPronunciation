@@ -3432,6 +3432,92 @@ function compactSentenceResultForSave(result) {
   }
 }
 
+function quoteTipWords(words) {
+  const names = [...new Set(words.map(item => String(item?.text || '').trim()).filter(Boolean))]
+    .slice(0, 3)
+  if (!names.length) return ''
+  return names.map(name => `"${name}"`).join(', ')
+}
+
+function buildSentenceImprovementTips(result, wordRows) {
+  if (!result) return []
+  const tips = []
+  const words = wordRows || []
+  const flagged = (key, threshold = 75) => words
+    .filter(item => Number(item?.prosodyFeedback?.[key]) >= threshold)
+    .sort((a, b) => Number(b?.prosodyFeedback?.[key] || 0) - Number(a?.prosodyFeedback?.[key] || 0))
+
+  const monotoneWords = flagged('monotone')
+  const unexpectedBreakWords = flagged('unexpectedBreak')
+  const missingBreakWords = flagged('missingBreak')
+  const fluencyScore = Number(result.fluencyScore)
+  const accuracyScore = Number(result.accuracyScore)
+  const completenessScore = Number(result.completenessScore)
+  const prosodyScore = Number(result.prosodyScore)
+
+  if (monotoneWords.length) {
+    tips.push({
+      key: 'monotone',
+      title: 'Pitch',
+      text: 'Giọng đang hơi đều. Nhấn key words và cho giọng lên/xuống rõ hơn.',
+    })
+  }
+
+  if (unexpectedBreakWords.length) {
+    const names = quoteTipWords(unexpectedBreakWords)
+    tips.push({
+      key: 'unexpected-break',
+      title: 'Continuity',
+      text: names ? `Đừng ngắt trước ${names}; nối cụm này liền hơn.` : 'Đừng ngắt giữa cụm từ; nối câu liền hơn.',
+    })
+  }
+
+  if (missingBreakWords.length) {
+    const names = quoteTipWords(missingBreakWords)
+    tips.push({
+      key: 'missing-break',
+      title: 'Pause',
+      text: names ? `Nên nghỉ nhẹ trước ${names} hoặc sau dấu câu.` : 'Nên nghỉ nhẹ ở dấu câu hoặc trước cụm ý mới.',
+    })
+  }
+
+  if (Number.isFinite(fluencyScore) && fluencyScore < 70 && !unexpectedBreakWords.length && !missingBreakWords.length) {
+    tips.push({
+      key: 'fluency',
+      title: 'Fluency',
+      text: 'Giảm pause dài, nói theo cụm, giữ tốc độ đều.',
+    })
+  }
+
+  if (Number.isFinite(accuracyScore) && accuracyScore < 70) {
+    const lowWords = words.filter(item => Number(item?.score) < 60)
+    const names = quoteTipWords(lowWords)
+    tips.push({
+      key: 'accuracy',
+      title: 'Accuracy',
+      text: names ? `Luyện phát âm các từ ${names}; đây là lỗi âm/từ, không phải lỗi intonation.` : 'Đây là lỗi phát âm âm/từ, không phải lỗi intonation.',
+    })
+  }
+
+  if (Number.isFinite(completenessScore) && completenessScore < 90) {
+    tips.push({
+      key: 'completeness',
+      title: 'Completeness',
+      text: 'Bạn có thể đã bỏ sót từ trong câu. Đọc chậm hơn và kiểm tra đủ từng cụm.',
+    })
+  }
+
+  if (!tips.length && Number.isFinite(prosodyScore) && prosodyScore < 80) {
+    tips.push({
+      key: 'prosody',
+      title: 'Intonation',
+      text: 'Tập nói theo cụm ý: nhấn từ quan trọng, lên/xuống giọng rõ hơn và nghỉ nhẹ ở dấu câu.',
+    })
+  }
+
+  return tips.slice(0, 5)
+}
+
 function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, onNext, onPrev, hasNext, hasPrev, recordingDurationSetting, initialResult = null, onResultChange, isLearned = false, onMarkDone }) {
   const [phase, setPhase] = useState(initialResult ? 'result' : 'ready')
   const [countdown, setCountdown] = useState(recordingDurationSetting || 5)
@@ -3542,6 +3628,22 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
         score: item.score,
         errorType: null,
       }))
+  const rawProsodyDetail = result?.prosodyDetail
+  const rawProsodyScores = rawProsodyDetail
+    ? [rawProsodyDetail.pitch, rawProsodyDetail.stress, rawProsodyDetail.rhythm, rawProsodyDetail.continuity]
+        .map(Number)
+        .filter(Number.isFinite)
+    : []
+  const prosodyDetailLooksUnavailable = rawProsodyScores.length > 0
+    && rawProsodyScores.every(value => value === 0)
+    && Number(result?.prosodyScore) > 0
+  const displayProsodyDetail = prosodyDetailLooksUnavailable ? {
+    pitch: Math.round(Number(result.prosodyScore)),
+    stress: Math.round(Number(result.prosodyScore)),
+    rhythm: Math.round(Number.isFinite(Number(result.fluencyScore)) ? Number(result.fluencyScore) : Number(result.prosodyScore)),
+    continuity: Math.round(Number.isFinite(Number(result.fluencyScore)) ? Number(result.fluencyScore) : Number(result.prosodyScore)),
+  } : rawProsodyDetail
+  const prosodyTips = buildSentenceImprovementTips(result, wordRows)
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-80">
@@ -3593,10 +3695,10 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
                   {showProsodyDetail && (
                     <div className="px-3 pb-2 border-t border-fuchsia-400/15 grid grid-cols-2 gap-x-3 gap-y-1 mt-1">
                       {[
-                        { label: 'Pitch', value: result.prosodyDetail?.pitch },
-                        { label: 'Stress', value: result.prosodyDetail?.stress },
-                        { label: 'Rhythm', value: result.prosodyDetail?.rhythm },
-                        { label: 'Continuity', value: result.prosodyDetail?.continuity },
+                        { label: 'Pitch', value: displayProsodyDetail?.pitch },
+                        { label: 'Stress', value: displayProsodyDetail?.stress },
+                        { label: 'Rhythm', value: displayProsodyDetail?.rhythm },
+                        { label: 'Continuity', value: displayProsodyDetail?.continuity },
                       ].map(({ label, value }) => (
                         <div key={label} className="flex items-center justify-between">
                           <span className="text-fuchsia-300/60 text-[10px]">{label}</span>
@@ -3606,8 +3708,19 @@ function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPractice
                           }
                         </div>
                       ))}
-                      {!result.prosodyDetail && (
+                      {!displayProsodyDetail && (
                         <div className="col-span-2 text-fuchsia-400/40 text-[10px] mt-0.5">Azure chưa trả về điểm chi tiết</div>
+                      )}
+                      {prosodyTips.length > 0 && (
+                        <div className="col-span-2 mt-1.5 space-y-1 border-t border-fuchsia-400/15 pt-1.5">
+                          <div className="text-fuchsia-200/65 text-[10px] uppercase tracking-wide">Cách cải thiện</div>
+                          {prosodyTips.map(tip => (
+                            <div key={tip.key} className="border-t border-fuchsia-400/10 pt-1.5 first:border-t-0 first:pt-0">
+                              <div className="text-fuchsia-100 text-[11px] font-semibold">{tip.title}</div>
+                              <div className="text-fuchsia-100/65 text-[11px] leading-snug">{tip.text}</div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}
