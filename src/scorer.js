@@ -1,8 +1,3 @@
-import { AutoProcessor, AutoModelForCTC, env } from '@huggingface/transformers'
-
-env.allowLocalModels = false
-env.useBrowserCache = true
-
 const MODEL_ID = 'Xenova/wav2vec2-base-960h'
 
 const VOCAB_ARR = ['<pad>','<unk>','|','E','T','A','O','I','N','S','R','H','L','D','C','U','M','F','P','G','W','Y','B','V','K','X','J','Q','Z']
@@ -11,6 +6,21 @@ const VOCAB = Object.fromEntries(VOCAB_ARR.map((c, i) => [c, i]))
 let _processor = null
 let _model = null
 let _loadPromise = null
+let _transformersPromise = null
+
+async function loadTransformers() {
+  if (!_transformersPromise) {
+    _transformersPromise = import('@huggingface/transformers').then((mod) => {
+      mod.env.allowLocalModels = false
+      mod.env.useBrowserCache = true
+      return mod
+    }).catch((error) => {
+      _transformersPromise = null
+      throw error
+    })
+  }
+  return _transformersPromise
+}
 
 export function isModelReady() {
   return _processor !== null && _model !== null
@@ -20,6 +30,7 @@ export async function ensureModelLoaded(onProgress) {
   if (isModelReady()) return
   if (!_loadPromise) {
     _loadPromise = (async () => {
+      const { AutoProcessor, AutoModelForCTC } = await loadTransformers()
       const opts = onProgress ? { progress_callback: onProgress } : {}
       _processor = await AutoProcessor.from_pretrained(MODEL_ID, opts)
       _model = await AutoModelForCTC.from_pretrained(MODEL_ID, opts)

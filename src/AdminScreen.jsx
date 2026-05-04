@@ -1,21 +1,20 @@
 import React, { useEffect, useMemo, useState, useCallback, useDeferredValue } from 'react'
 import { read, utils, writeFile } from 'xlsx'
-import { ChevronLeft, CheckSquare, Download, Flag, Plus, RefreshCw, Search, Square, Trash2 } from 'lucide-react'
+import { ChevronLeft, Download, Plus, RefreshCw, Search, Trash2, Flag } from 'lucide-react'
 import {
   GENERIC_VIETNAMESE_DEFINITIONS,
   LEVELS,
   WORD_LANGUAGES,
   WORD_TYPES,
   deleteCategory,
-  deleteSentencesBulk,
   deleteWord,
-  deleteWordsBulk,
   fetchAllWords,
   importCategories,
   importSentences,
   importWords,
   listCategories,
   listProfiles,
+  listSentenceTopics,
   listSentences,
   setWordFlagged,
   updateProfile,
@@ -101,46 +100,25 @@ function importPhaseLabel(phase) {
   }
 }
 
-const WordListItem = React.memo(function WordListItem({ item, onEdit, onToggleFlag, onDelete, deleteMode, selected, onToggleSelect }) {
+const WordListItem = React.memo(function WordListItem({ item, onEdit, onToggleFlag, onDelete }) {
   return (
-    <div
-      onClick={deleteMode ? () => onToggleSelect(item.id) : undefined}
-      className={`rounded-xl border p-3 ${deleteMode ? 'cursor-pointer select-none' : ''} ${
-        deleteMode && selected
-          ? 'border-red-400/40 bg-red-500/10'
-          : item.flagged_incorrect
-            ? 'border-amber-400/40 bg-amber-400/5'
-            : 'border-white/10 bg-gray-950/40'
-      }`}
-    >
-      <div className={`grid gap-2 items-start ${deleteMode ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)_auto_auto]'}`}>
-        {deleteMode && (
-          <div className="w-5 h-5 mt-0.5 flex items-center justify-center flex-shrink-0">
-            {selected ? <CheckSquare size={17} className="text-red-400" /> : <Square size={17} className="text-white/30" />}
-          </div>
-        )}
-        <button
-          onClick={deleteMode ? (e) => { e.stopPropagation(); onToggleSelect(item.id) } : () => onEdit(item)}
-          className="min-w-0 flex-1 text-left"
-        >
+    <div className={`rounded-xl border p-3 ${item.flagged_incorrect ? 'border-amber-400/40 bg-amber-400/5' : 'border-white/10 bg-gray-950/40'}`}>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 items-start">
+        <button onClick={() => onEdit(item)} className="min-w-0 flex-1 text-left">
           <div className="font-semibold break-words">{item.word} <span className="text-white/35 text-xs">{item.ipa ? `/${item.ipa}/` : 'Thiếu IPA'}</span></div>
           <div className="text-white/45 text-xs truncate">{item.vietnamese_definition}</div>
           <div className="text-white/30 text-[11px] break-words">{LANGUAGE_LABEL[item.language || 'english']} · {item.categories?.name || 'No category'} · {item.level || 'No level'}</div>
         </button>
-        {!deleteMode && (
-          <>
-            <button
-              onClick={() => onToggleFlag(item)}
-              title={item.flagged_incorrect ? 'Bỏ đánh dấu sai' : 'Đánh dấu sai'}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center ${item.flagged_incorrect ? 'bg-amber-400 text-gray-950' : 'bg-white/10 text-white/55'}`}
-            >
-              <Flag size={15} />
-            </button>
-            <button onClick={() => onDelete(item.id)} className="w-9 h-9 rounded-xl bg-red-500/10 text-red-200 flex items-center justify-center">
-              <Trash2 size={15} />
-            </button>
-          </>
-        )}
+        <button
+          onClick={() => onToggleFlag(item)}
+          title={item.flagged_incorrect ? 'Bỏ đánh dấu sai' : 'Đánh dấu sai'}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center ${item.flagged_incorrect ? 'bg-amber-400 text-gray-950' : 'bg-white/10 text-white/55'}`}
+        >
+          <Flag size={15} />
+        </button>
+        <button onClick={() => onDelete(item.id)} className="w-9 h-9 rounded-xl bg-red-500/10 text-red-200 flex items-center justify-center">
+          <Trash2 size={15} />
+        </button>
       </div>
     </div>
   )
@@ -151,8 +129,10 @@ export default function AdminScreen({ profile, onBack }) {
   const [categories, setCategories] = useState([])
   const [allWords, setAllWords] = useState([])
   const [sentences, setSentences] = useState([])
-  const [sentencesLoaded, setSentencesLoaded] = useState(false)
+  const [sentencesTotal, setSentencesTotal] = useState(0)
+  const [sentencesHasMore, setSentencesHasMore] = useState(false)
   const [sentencesRefreshing, setSentencesRefreshing] = useState(false)
+  const [sentencesLoadingMore, setSentencesLoadingMore] = useState(false)
   const [wordsLoaded, setWordsLoaded] = useState(false)
   const [wordsCacheChecked, setWordsCacheChecked] = useState(false)
   const [wordsCachedAt, setWordsCachedAt] = useState(null)
@@ -162,11 +142,10 @@ export default function AdminScreen({ profile, onBack }) {
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
   const [sentenceQuery, setSentenceQuery] = useState('')
-  const deferredSentenceQuery = useDeferredValue(sentenceQuery)
   const [sentenceLevelFilter, setSentenceLevelFilter] = useState('all')
   const [sentenceTopicFilter, setSentenceTopicFilter] = useState('all')
   const [sentenceLanguageFilter, setSentenceLanguageFilter] = useState('all')
-  const [visibleSentenceLimit, setVisibleSentenceLimit] = useState(SENTENCES_PAGE_SIZE)
+  const [sentenceTopics, setSentenceTopics] = useState([])
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [languageFilter, setLanguageFilter] = useState('all')
   const [wordStatusFilter, setWordStatusFilter] = useState('all')
@@ -179,11 +158,6 @@ export default function AdminScreen({ profile, onBack }) {
   const [loading, setLoading] = useState(false)
   const [importProgress, setImportProgress] = useState(null)
   const [toast, setToast] = useState(null)
-  const [wordsDeleteMode, setWordsDeleteMode] = useState(false)
-  const [selectedWordIds, setSelectedWordIds] = useState(() => new Set())
-  const [sentencesDeleteMode, setSentencesDeleteMode] = useState(false)
-  const [selectedSentenceIds, setSelectedSentenceIds] = useState(() => new Set())
-  const [deleteConfirm, setDeleteConfirm] = useState(null)
 
   useEffect(() => {
     if (!toast) return
@@ -231,16 +205,51 @@ export default function AdminScreen({ profile, onBack }) {
   const refreshSentences = useCallback(async () => {
     setSentencesRefreshing(true)
     try {
-      const data = await listSentences({ limit: 2000 })
-      setSentences(data)
-      setSentencesLoaded(true)
+      const [result, topics] = await Promise.all([
+        listSentences({
+          query: sentenceQuery,
+          language: sentenceLanguageFilter,
+          level: sentenceLevelFilter,
+          topic: sentenceTopicFilter,
+          limit: SENTENCES_PAGE_SIZE,
+          offset: 0,
+        }),
+        listSentenceTopics({
+          language: sentenceLanguageFilter,
+          level: sentenceLevelFilter,
+        }),
+      ])
+      setSentences(result.items)
+      setSentencesTotal(result.total)
+      setSentencesHasMore(result.hasMore)
+      setSentenceTopics(topics)
     } catch (err) {
-      setSentencesLoaded(true)
       setToast({ type: 'error', message: `Sentence load failed: ${err.message}` })
     } finally {
       setSentencesRefreshing(false)
     }
-  }, [])
+  }, [sentenceLanguageFilter, sentenceLevelFilter, sentenceQuery, sentenceTopicFilter])
+  const loadMoreSentences = useCallback(async () => {
+    if (sentencesLoadingMore || sentencesRefreshing || !sentencesHasMore) return
+    setSentencesLoadingMore(true)
+    try {
+      const result = await listSentences({
+        query: sentenceQuery,
+        language: sentenceLanguageFilter,
+        level: sentenceLevelFilter,
+        topic: sentenceTopicFilter,
+        limit: SENTENCES_PAGE_SIZE,
+        offset: sentences.length,
+      })
+      setSentences(prev => [...prev, ...result.items])
+      setSentencesTotal(result.total)
+      setSentencesHasMore(result.hasMore)
+    } catch (err) {
+      setToast({ type: 'error', message: `Sentence load failed: ${err.message}` })
+    } finally {
+      setSentencesLoadingMore(false)
+    }
+  }, [sentenceLanguageFilter, sentenceLevelFilter, sentenceQuery, sentenceTopicFilter, sentences.length, sentencesHasMore, sentencesLoadingMore, sentencesRefreshing])
   const refreshProfiles = useCallback(async () => {
     setProfiles(await listProfiles())
     setProfilesLoaded(true)
@@ -252,20 +261,20 @@ export default function AdminScreen({ profile, onBack }) {
 
   useEffect(() => {
     if (tab === 'words' && wordsCacheChecked && !wordsLoaded && !wordsRefreshing) refreshWords()
-    if (tab === 'sentences' && !sentencesLoaded && !sentencesRefreshing) refreshSentences()
     if (tab === 'users' && !profilesLoaded) refreshProfiles().catch(err => {
       setProfilesLoaded(true)
       setMessage(err.message)
     })
-  }, [profilesLoaded, refreshProfiles, refreshSentences, refreshWords, sentencesLoaded, sentencesRefreshing, tab, wordsCacheChecked, wordsLoaded, wordsRefreshing])
+  }, [profilesLoaded, refreshProfiles, refreshWords, tab, wordsCacheChecked, wordsLoaded, wordsRefreshing])
 
   useEffect(() => {
     setVisibleWordLimit(WORDS_PAGE_SIZE)
   }, [allWords, categoryFilter, deferredQuery, languageFilter, wordStatusFilter])
 
   useEffect(() => {
-    setVisibleSentenceLimit(SENTENCES_PAGE_SIZE)
-  }, [deferredSentenceQuery, sentenceLanguageFilter, sentenceLevelFilter, sentenceTopicFilter, sentences])
+    if (tab !== 'sentences') return
+    refreshSentences()
+  }, [tab, refreshSentences])
 
   useEffect(() => {
     if (tab !== 'words') return
@@ -315,31 +324,7 @@ export default function AdminScreen({ profile, onBack }) {
     [displayedWords, visibleWordLimit]
   )
 
-  const sentenceTopicOptions = useMemo(
-    () => [...new Set(sentences.map(item => String(item.topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [sentences]
-  )
-
-  const displayedSentences = useMemo(() => {
-    let list = sentences
-    if (sentenceLanguageFilter !== 'all') list = list.filter(item => (item.language || 'english') === sentenceLanguageFilter)
-    if (sentenceLevelFilter !== 'all') list = list.filter(item => item.level === sentenceLevelFilter)
-    if (sentenceTopicFilter !== 'all') list = list.filter(item => item.topic === sentenceTopicFilter)
-    const q = deferredSentenceQuery.trim().toLowerCase()
-    if (q) {
-      list = list.filter(item =>
-        (item.sentence || '').toLowerCase().includes(q) ||
-        (item.vietnamese_translation || '').toLowerCase().includes(q) ||
-        (item.topic || '').toLowerCase().includes(q)
-      )
-    }
-    return list
-  }, [deferredSentenceQuery, sentenceLanguageFilter, sentenceLevelFilter, sentenceTopicFilter, sentences])
-
-  const visibleSentences = useMemo(
-    () => displayedSentences.slice(0, visibleSentenceLimit),
-    [displayedSentences, visibleSentenceLimit]
-  )
+  const sentenceTopicOptions = useMemo(() => sentenceTopics, [sentenceTopics])
 
   const editWord = useCallback((item) => {
     setWordForm({
@@ -358,67 +343,6 @@ export default function AdminScreen({ profile, onBack }) {
     await deleteWord(id)
     await refreshWords()
   }, [refreshWords])
-
-  const enterWordsDeleteMode = useCallback(() => { setWordsDeleteMode(true); setSelectedWordIds(new Set()) }, [])
-  const exitWordsDeleteMode = useCallback(() => { setWordsDeleteMode(false); setSelectedWordIds(new Set()) }, [])
-  const toggleSelectWord = useCallback((id) => {
-    setSelectedWordIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  }, [])
-  const selectAllDisplayedWords = useCallback(() => {
-    setSelectedWordIds(new Set(displayedWords.map(w => w.id)))
-  }, [displayedWords])
-  const deselectAllWords = useCallback(() => setSelectedWordIds(new Set()), [])
-  const selectWordsByLanguage = useCallback((lang) => {
-    setSelectedWordIds(prev => { const n = new Set(prev); displayedWords.filter(w => (w.language || 'english') === lang).forEach(w => n.add(w.id)); return n })
-  }, [displayedWords])
-  const selectWordsByCategory = useCallback((catId) => {
-    setSelectedWordIds(prev => { const n = new Set(prev); displayedWords.filter(w => (w.category_id || '') === catId).forEach(w => n.add(w.id)); return n })
-  }, [displayedWords])
-  const executeDeleteWords = useCallback(async () => {
-    const ids = [...selectedWordIds]
-    const count = ids.length
-    setLoading(true)
-    try {
-      await deleteWordsBulk(ids)
-      setDeleteConfirm(null)
-      exitWordsDeleteMode()
-      await refreshWords()
-      setToast({ type: 'success', message: `Đã xóa ${count} từ.` })
-    } catch (err) {
-      setToast({ type: 'error', message: `Xóa lỗi: ${err.message}` })
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedWordIds, exitWordsDeleteMode, refreshWords])
-
-  const enterSentencesDeleteMode = useCallback(() => { setSentencesDeleteMode(true); setSelectedSentenceIds(new Set()) }, [])
-  const exitSentencesDeleteMode = useCallback(() => { setSentencesDeleteMode(false); setSelectedSentenceIds(new Set()) }, [])
-  const toggleSelectSentence = useCallback((id) => {
-    setSelectedSentenceIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  }, [])
-  const selectAllDisplayedSentences = useCallback(() => {
-    setSelectedSentenceIds(new Set(displayedSentences.map(s => s.id)))
-  }, [displayedSentences])
-  const deselectAllSentences = useCallback(() => setSelectedSentenceIds(new Set()), [])
-  const selectSentencesByLanguage = useCallback((lang) => {
-    setSelectedSentenceIds(prev => { const n = new Set(prev); displayedSentences.filter(s => (s.language || 'english') === lang).forEach(s => n.add(s.id)); return n })
-  }, [displayedSentences])
-  const executeDeleteSentences = useCallback(async () => {
-    const ids = [...selectedSentenceIds]
-    const count = ids.length
-    setLoading(true)
-    try {
-      await deleteSentencesBulk(ids)
-      setDeleteConfirm(null)
-      exitSentencesDeleteMode()
-      await refreshSentences()
-      setToast({ type: 'success', message: `Đã xóa ${count} câu.` })
-    } catch (err) {
-      setToast({ type: 'error', message: `Xóa lỗi: ${err.message}` })
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedSentenceIds, exitSentencesDeleteMode, refreshSentences])
 
   const toggleFlag = useCallback(async (item) => {
     const next = !item.flagged_incorrect
@@ -595,7 +519,7 @@ export default function AdminScreen({ profile, onBack }) {
   }
 
   const exportSentences = () => {
-    const rows = displayedSentences.map(item => ({
+    const rows = sentences.map(item => ({
       sentence: item.sentence || '',
       language: item.language || 'english',
       vietnamese_translation: item.vietnamese_translation || '',
@@ -821,58 +745,13 @@ export default function AdminScreen({ profile, onBack }) {
                 <option value="missing-root">Thiếu từ gốc</option>
               </select>
             </div>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-white/45">
-                <span>Hiển thị {visibleWords.length}/{displayedWords.length} từ khớp bộ lọc</span>
-                <span>· tổng {allWords.length}</span>
-                {wordsRefreshing && <span>· đang tải...</span>}
-                {query !== deferredQuery && <span>· đang lọc...</span>}
-                {!wordsRefreshing && wordsCachedAt && <span>· cache {new Date(wordsCachedAt).toLocaleTimeString()}</span>}
-              </div>
-              <button
-                type="button"
-                onClick={wordsDeleteMode ? exitWordsDeleteMode : enterWordsDeleteMode}
-                className={`flex-shrink-0 rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 ${wordsDeleteMode ? 'bg-red-500/20 text-red-300 border border-red-400/30' : 'bg-red-500/10 text-red-200'}`}
-              >
-                <Trash2 size={13} />
-                {wordsDeleteMode ? 'Hủy xóa' : 'Xóa hàng loạt'}
-              </button>
+            <div className="mb-3 flex flex-wrap gap-x-2 gap-y-1 text-xs text-white/45">
+              <span>Hiển thị {visibleWords.length}/{displayedWords.length} từ khớp bộ lọc</span>
+              <span>· tổng {allWords.length}</span>
+              {wordsRefreshing && <span>· đang tải...</span>}
+              {query !== deferredQuery && <span>· đang lọc...</span>}
+              {!wordsRefreshing && wordsCachedAt && <span>· cache {new Date(wordsCachedAt).toLocaleTimeString()}</span>}
             </div>
-            {wordsDeleteMode && (
-              <div className="mb-3 rounded-xl border border-red-400/25 bg-red-500/8 p-3">
-                <div className="flex flex-wrap gap-2 items-center">
-                  <button onClick={selectAllDisplayedWords} className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold">Chọn tất cả ({displayedWords.length})</button>
-                  <button onClick={deselectAllWords} className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold">Bỏ chọn</button>
-                  <select
-                    value=""
-                    onChange={e => { if (e.target.value) selectWordsByLanguage(e.target.value) }}
-                    className="rounded-lg bg-white/10 border border-white/10 px-2 py-1.5 text-xs text-white"
-                  >
-                    <option value="" disabled>+ Theo ngôn ngữ</option>
-                    {WORD_LANGUAGES.map(l => <option key={l} value={l}>{LANGUAGE_LABEL[l]}</option>)}
-                  </select>
-                  <select
-                    value=""
-                    onChange={e => { if (e.target.value) selectWordsByCategory(e.target.value) }}
-                    className="rounded-lg bg-white/10 border border-white/10 px-2 py-1.5 text-xs text-white"
-                  >
-                    <option value="" disabled>+ Theo chủ đề</option>
-                    {categoryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                  <div className="ml-auto flex items-center gap-2">
-                    <span className="text-white/50 text-xs">Đã chọn: <span className="text-red-300 font-semibold">{selectedWordIds.size}</span></span>
-                    <button
-                      disabled={selectedWordIds.size === 0 || loading}
-                      onClick={() => setDeleteConfirm({ type: 'words', count: selectedWordIds.size })}
-                      className="rounded-xl bg-red-500 text-white px-3 py-1.5 text-xs font-bold disabled:opacity-40 flex items-center gap-1.5"
-                    >
-                      <Trash2 size={13} />
-                      Xóa {selectedWordIds.size} từ
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="grid gap-2">
               {visibleWords.map(item => (
                 <WordListItem
@@ -881,9 +760,6 @@ export default function AdminScreen({ profile, onBack }) {
                   onEdit={editWord}
                   onToggleFlag={toggleFlag}
                   onDelete={deleteWordAndRefresh}
-                  deleteMode={wordsDeleteMode}
-                  selected={selectedWordIds.has(item.id)}
-                  onToggleSelect={toggleSelectWord}
                 />
               ))}
               {visibleWords.length < displayedWords.length && (
@@ -918,7 +794,7 @@ export default function AdminScreen({ profile, onBack }) {
               />
             </div>
             <div className="grid gap-2 mb-3 grid-cols-2 sm:grid-cols-4">
-              <button type="button" onClick={exportSentences} disabled={displayedSentences.length === 0} className="rounded-xl bg-emerald-300 text-gray-950 px-3 py-2.5 text-xs font-bold disabled:opacity-40 flex items-center justify-center gap-2">
+              <button type="button" onClick={exportSentences} disabled={sentences.length === 0} className="rounded-xl bg-emerald-300 text-gray-950 px-3 py-2.5 text-xs font-bold disabled:opacity-40 flex items-center justify-center gap-2">
                 <Download size={15} />
                 Export Excel
               </button>
@@ -949,87 +825,34 @@ export default function AdminScreen({ profile, onBack }) {
                 {sentenceTopicOptions.map(topic => <option key={topic} value={topic}>{topic}</option>)}
               </select>
             </div>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-white/45">
-                <span>Showing {visibleSentences.length}/{displayedSentences.length} sentences</span>
-                <span>· total {sentences.length}</span>
-                {sentencesRefreshing && <span>· loading...</span>}
-                {sentenceQuery !== deferredSentenceQuery && <span>· filtering...</span>}
-              </div>
-              <button
-                type="button"
-                onClick={sentencesDeleteMode ? exitSentencesDeleteMode : enterSentencesDeleteMode}
-                className={`flex-shrink-0 rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 ${sentencesDeleteMode ? 'bg-red-500/20 text-red-300 border border-red-400/30' : 'bg-red-500/10 text-red-200'}`}
-              >
-                <Trash2 size={13} />
-                {sentencesDeleteMode ? 'Hủy xóa' : 'Xóa hàng loạt'}
-              </button>
+            <div className="mb-3 flex flex-wrap gap-x-2 gap-y-1 text-xs text-white/45">
+              <span>Loaded {sentences.length}/{sentencesTotal} sentences</span>
+              {(sentencesRefreshing || sentencesLoadingMore) && <span>· loading...</span>}
             </div>
-            {sentencesDeleteMode && (
-              <div className="mb-3 rounded-xl border border-red-400/25 bg-red-500/8 p-3">
-                <div className="flex flex-wrap gap-2 items-center">
-                  <button onClick={selectAllDisplayedSentences} className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold">Chọn tất cả ({displayedSentences.length})</button>
-                  <button onClick={deselectAllSentences} className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold">Bỏ chọn</button>
-                  <select
-                    value=""
-                    onChange={e => { if (e.target.value) selectSentencesByLanguage(e.target.value) }}
-                    className="rounded-lg bg-white/10 border border-white/10 px-2 py-1.5 text-xs text-white"
-                  >
-                    <option value="" disabled>+ Theo ngôn ngữ</option>
-                    {WORD_LANGUAGES.map(l => <option key={l} value={l}>{LANGUAGE_LABEL[l]}</option>)}
-                  </select>
-                  <div className="ml-auto flex items-center gap-2">
-                    <span className="text-white/50 text-xs">Đã chọn: <span className="text-red-300 font-semibold">{selectedSentenceIds.size}</span></span>
-                    <button
-                      disabled={selectedSentenceIds.size === 0 || loading}
-                      onClick={() => setDeleteConfirm({ type: 'sentences', count: selectedSentenceIds.size })}
-                      className="rounded-xl bg-red-500 text-white px-3 py-1.5 text-xs font-bold disabled:opacity-40 flex items-center gap-1.5"
-                    >
-                      <Trash2 size={13} />
-                      Xóa {selectedSentenceIds.size} câu
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="grid gap-2">
-              {visibleSentences.map(item => {
-                const isSelected = selectedSentenceIds.has(item.id)
-                return (
-                <div
-                  key={item.id}
-                  onClick={sentencesDeleteMode ? () => toggleSelectSentence(item.id) : undefined}
-                  className={`rounded-xl border p-3 ${sentencesDeleteMode ? `cursor-pointer select-none ${isSelected ? 'border-red-400/40 bg-red-500/10' : 'border-white/10 bg-gray-950/40'}` : 'border-white/10 bg-gray-950/40'}`}
-                >
-                  <div className={sentencesDeleteMode ? 'flex gap-2' : ''}>
-                    {sentencesDeleteMode && (
-                      <div className="w-5 h-5 mt-0.5 flex items-center justify-center flex-shrink-0">
-                        {isSelected ? <CheckSquare size={17} className="text-red-400" /> : <Square size={17} className="text-white/30" />}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold leading-snug break-words">{item.sentence}</div>
-                      <div className="text-white/50 text-sm leading-snug mt-1 break-words">{item.vietnamese_translation || 'No translation'}</div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                        <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_LABEL[item.language || 'english']}</span>
-                        {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
-                        {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
-                        {item.source && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/35">{item.source}</span>}
-                      </div>
-                    </div>
+              {sentences.map(item => (
+                <div key={item.id} className="rounded-xl border border-white/10 bg-gray-950/40 p-3">
+                  <div className="font-semibold leading-snug break-words">{item.sentence}</div>
+                  <div className="text-white/50 text-sm leading-snug mt-1 break-words">{item.vietnamese_translation || 'No translation'}</div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_LABEL[item.language || 'english']}</span>
+                    {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
+                    {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
+                    {item.source && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/35">{item.source}</span>}
                   </div>
                 </div>
-              )})}
-              {visibleSentences.length < displayedSentences.length && (
+              ))}
+              {sentencesHasMore && (
                 <button
                   type="button"
-                  onClick={() => setVisibleSentenceLimit(limit => limit + SENTENCES_PAGE_SIZE)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/70 active:scale-[0.99]"
+                  onClick={loadMoreSentences}
+                  disabled={sentencesLoadingMore}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/70 active:scale-[0.99] disabled:opacity-50"
                 >
-                  Show more {Math.min(SENTENCES_PAGE_SIZE, displayedSentences.length - visibleSentences.length)} sentences
+                  {sentencesLoadingMore ? 'Loading...' : `Load more ${Math.min(SENTENCES_PAGE_SIZE, Math.max(sentencesTotal - sentences.length, 0))} sentences`}
                 </button>
               )}
-              {displayedSentences.length === 0 && (
+              {sentences.length === 0 && !sentencesRefreshing && (
                 <div className="rounded-xl border border-white/10 bg-gray-950/40 p-4 text-sm text-white/45 text-center">
                   No sentences match the current filters.
                 </div>
@@ -1110,33 +933,6 @@ export default function AdminScreen({ profile, onBack }) {
             </div>
           ))}
           <p className="text-white/35 text-xs leading-relaxed">Xóa Auth user cần Supabase Dashboard hoặc Edge Function dùng service_role. Frontend anon key chỉ nên sửa profile, role, active.</p>
-        </div>
-      )}
-
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-red-400/30 bg-gray-900 shadow-xl p-5">
-            <h3 className="font-bold text-lg text-white mb-1">Xác nhận xóa</h3>
-            <p className="text-white/65 text-sm mb-5">
-              Xóa vĩnh viễn <span className="font-bold text-red-300">{deleteConfirm.count}</span> {deleteConfirm.type === 'words' ? 'từ' : 'câu'}? Thao tác không thể hoàn tác.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="rounded-xl bg-white/10 text-white py-3 font-semibold"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={deleteConfirm.type === 'words' ? executeDeleteWords : executeDeleteSentences}
-                disabled={loading}
-                className="rounded-xl bg-red-500 text-white py-3 font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading ? <RefreshCw size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                Xóa {deleteConfirm.count} mục
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

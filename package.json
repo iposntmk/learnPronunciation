@@ -3,7 +3,8 @@
     "version":  "1.0.0",
     "type":  "module",
     "scripts":  {
-                    "dev":  "vite",
+                    "dev":  "vite --host localhost",
+                    "dev:mobile":  "vite --host 0.0.0.0 --mode mobile",
                     "build":  "vite build",
                     "preview":  "vite preview",
                     "supabase:check":  "node scripts/supabaseSeedCommonWords.mjs --check",

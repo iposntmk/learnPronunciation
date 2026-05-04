@@ -31,9 +31,11 @@ function showMobileUrl() {
 
 export default defineConfig({
   base: '/learnPronunciation/',
-  plugins: [react(), basicSsl(), showMobileUrl()],
+  plugins: [
+    react(),
+    ...(process.env.npm_lifecycle_event === 'dev:mobile' ? [basicSsl(), showMobileUrl()] : []),
+  ],
   server: {
-    host: '0.0.0.0',
     port: 5173,
   },
   optimizeDeps: {

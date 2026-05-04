@@ -98,12 +98,11 @@ export async function listCategories() {
   return data || []
 }
 
-export async function listSentences({ query = '', topic = 'all', level = 'all', language = 'all', limit = 20, page = 1 } = {}) {
+export async function listSentences({ query = '', topic = 'all', level = 'all', language = 'all', limit = 100, offset = 0 } = {}) {
   const client = requireSupabase()
-  const offset = (page - 1) * limit
   let request = client
     .from('sentences')
-    .select('*')
+    .select('*', { count: 'exact' })
     .order('language', { ascending: true })
     .order('level', { ascending: true, nullsFirst: false })
     .order('topic', { ascending: true, nullsFirst: false })
@@ -118,35 +117,31 @@ export async function listSentences({ query = '', topic = 'all', level = 'all', 
   if (level !== 'all') request = request.eq('level', level)
   if (language !== 'all') request = request.eq('language', normalizeLanguage(language))
 
-  const { data, error } = await request
+  const { data, error, count } = await request
   if (error) throw error
-  return data || []
+  const items = data || []
+  return {
+    items,
+    total: Number.isFinite(count) ? count : items.length,
+    hasMore: offset + items.length < (Number.isFinite(count) ? count : items.length),
+    nextOffset: offset + items.length,
+  }
 }
 
-export async function listSentenceTopics() {
+export async function listSentenceTopics({ language = 'all', level = 'all' } = {}) {
   const client = requireSupabase()
-  const { data, error } = await client
+  let request = client
     .from('sentences')
     .select('topic')
     .not('topic', 'is', null)
-  
-  if (error) throw error
-  const topics = [...new Set(data.map(d => String(d.topic).trim()))].sort((a, b) => a.localeCompare(b))
-  return topics
-}
 
-export async function markSentenceLearned(sentenceId, learned = true) {
-  const client = requireSupabase()
-  const { data: { user }, error: userError } = await client.auth.getUser()
-  if (userError) throw userError
-  if (!user) throw new Error('Authentication required.')
-  const { error } = await client
-    .from('user_sentence_progress')
-    .upsert(
-      { user_id: user.id, sentence_id: sentenceId, is_learned: learned },
-      { onConflict: 'user_id,sentence_id' }
-    )
+  if (level !== 'all') request = request.eq('level', level)
+  if (language !== 'all') request = request.eq('language', normalizeLanguage(language))
+
+  const { data, error } = await request
   if (error) throw error
+  return [...new Set((data || []).map(item => String(item.topic || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b))
 }
 
 export async function listMySentenceProgress() {
@@ -348,26 +343,6 @@ export async function deleteWord(id) {
   const client = requireSupabase()
   const { error } = await client.from('words').delete().eq('id', id)
   if (error) throw error
-}
-
-export async function deleteWordsBulk(ids) {
-  const client = requireSupabase()
-  if (!ids?.length) return
-  const BATCH = 100
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const { error } = await client.from('words').delete().in('id', ids.slice(i, i + BATCH))
-    if (error) throw error
-  }
-}
-
-export async function deleteSentencesBulk(ids) {
-  const client = requireSupabase()
-  if (!ids?.length) return
-  const BATCH = 100
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const { error } = await client.from('sentences').delete().in('id', ids.slice(i, i + BATCH))
-    if (error) throw error
-  }
 }
 
 export async function findOrCreateWord(word, meta = {}) {
