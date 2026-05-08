@@ -9,7 +9,6 @@ import {
 import { scoreSentence, scoreWord } from './scorer.js'
 import { getAzureUsageSummary } from './azureUsage.js'
 import { speakNeural, speakPhoneme } from './tts.js'
-import { COMMON_3000_LEVELS } from './commonWords.js'
 import AuthGate from './AuthGate.jsx'
 import { supabase } from './supabaseClient.js'
 import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listLevels, listMyProgress, listMySentenceProgress, listSentenceTopics, listSentences, listWords, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
@@ -2491,6 +2490,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
   const [commonLearnedFilter, setCommonLearnedFilter] = useState('all')
   const [supabaseWords, setSupabaseWords] = useState([])
   const [supabaseCategories, setSupabaseCategories] = useState([])
+  const [supabaseLevels, setSupabaseLevels] = useState(LEVELS)
   const [dictionaryCacheLoaded, setDictionaryCacheLoaded] = useState(false)
   const [dictionaryLoaded, setDictionaryLoaded] = useState(false)
   const [dictionaryCachedAt, setDictionaryCachedAt] = useState(null)
@@ -2549,18 +2549,13 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
     }
   }, [])
   useEffect(() => {
+    if (!dictionaryCacheLoaded) return
     let cancelled = false
-
-    if (!dictionaryCacheLoaded || dictionaryLoaded) {
-      return () => { cancelled = true }
-    }
-
     refreshDictionary({ shouldApply: () => !cancelled })
-
     return () => {
       cancelled = true
     }
-  }, [dictionaryCacheLoaded, dictionaryLoaded, refreshDictionary])
+  }, [dictionaryCacheLoaded, refreshDictionary])
 
   useEffect(() => {
     setVisibleCommonLimit(DICTIONARY_PAGE_SIZE)
@@ -2580,6 +2575,18 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       })
     return () => { cancelled = true }
   }, [dictionaryCacheLoaded, supabaseCategories.length])
+
+  useEffect(() => {
+    let cancelled = false
+    listLevels()
+      .then(rows => {
+        if (cancelled) return
+        const codes = rows.map(r => r.code)
+        if (codes.length > 0) setSupabaseLevels(codes)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
   const openWord = (word, meta = {}) => {
     const w = word.trim().toLowerCase()
     const initialLanguage = normalizeLanguage(
@@ -2752,7 +2759,8 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       const language = normalizeLanguage(commonLanguage)
       list = list.filter(entry => normalizeLanguage(entry.language) === language)
     }
-    if (commonLevel !== 'all') list = list.filter(entry => entry.level === commonLevel)
+    if (commonLevel === 'none') list = list.filter(entry => !entry.level)
+    else if (commonLevel !== 'all') list = list.filter(entry => entry.level === commonLevel)
     if (commonCategory !== 'all') list = list.filter(entry => entry.categoryId === commonCategory)
     const matchesQuery = searchDictionaryEntries(list, deferredCommonQuery, 'all')
     return deferredCommonQuery.trim() ? matchesQuery : list
@@ -3000,7 +3008,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           >
             Tất cả
           </button>
-          {COMMON_3000_LEVELS.map(level => (
+          {supabaseLevels.map(level => (
             <button
               key={level}
               onClick={() => setCommonLevel(level)}
@@ -3009,6 +3017,12 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
               {level}
             </button>
           ))}
+          <button
+            onClick={() => setCommonLevel('none')}
+            className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${commonLevel === 'none' ? 'bg-white text-gray-950 border-white' : 'bg-white/5 text-white/60 border-white/10'}`}
+          >
+            Chưa có level
+          </button>
         </div>
 
         <select
@@ -3323,6 +3337,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
           </select>
           <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
             <option value="all">All levels</option>
+            <option value="none">No level</option>
             {levelOptions.map(level => <option key={level} value={level}>{level}</option>)}
           </select>
           <select value={topicFilter} onChange={e => setTopicFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">

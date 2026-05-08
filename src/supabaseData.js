@@ -172,7 +172,8 @@ export async function listSentences({ query = '', topic = 'all', level = 'all', 
     request = request.or(`sentence.ilike.%${q}%,vietnamese_translation.ilike.%${q}%,topic.ilike.%${q}%`)
   }
   if (topic !== 'all') request = request.eq('topic', topic || null)
-  if (level !== 'all') request = request.eq('level', level)
+  if (level === 'none') request = request.is('level', null)
+  else if (level !== 'all') request = request.eq('level', level)
   if (language !== 'all') request = request.eq('language', normalizeLanguage(language))
 
   const { data, error, count } = await request
@@ -212,7 +213,8 @@ export async function listSentenceTopics({ language = 'all', level = 'all' } = {
     .select('topic')
     .not('topic', 'is', null)
 
-  if (level !== 'all') request = request.eq('level', level)
+  if (level === 'none') request = request.is('level', null)
+  else if (level !== 'all') request = request.eq('level', level)
   if (language !== 'all') request = request.eq('language', normalizeLanguage(language))
 
   const { data, error } = await request
@@ -287,7 +289,10 @@ export async function listWords({ query = '', categoryId = 'all', level = 'all',
     request = request.or(`word.ilike.%${q}%,vietnamese_definition.ilike.%${q}%,root_word.ilike.%${q}%`)
   }
   if (!missingIpa && !genericDefinition && categoryId !== 'all') request = request.eq('category_id', categoryId || null)
-  if (!missingIpa && !genericDefinition && level !== 'all') request = request.eq('level', level)
+  if (!missingIpa && !genericDefinition) {
+    if (level === 'none') request = request.is('level', null)
+    else if (level !== 'all') request = request.eq('level', level)
+  }
   if (language && language !== 'all') request = request.eq('language', normalizeLanguage(language))
 
   const { data, error } = await request
@@ -539,6 +544,96 @@ export async function updateProfile(profile) {
   return data
 }
 
+function normalizeForMatch(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+}
+
+function levenshtein(a, b) {
+  if (a === b) return 0
+  if (!a.length) return b.length
+  if (!b.length) return a.length
+  const prev = new Array(b.length + 1)
+  for (let j = 0; j <= b.length; j++) prev[j] = j
+  for (let i = 1; i <= a.length; i++) {
+    let curr = i
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      const next = Math.min(curr + 1, prev[j] + 1, prev[j - 1] + cost)
+      prev[j - 1] = curr
+      curr = next
+    }
+    prev[b.length] = curr
+  }
+  return prev[b.length]
+}
+
+export function findCategoryMatch(name, categories = []) {
+  const raw = String(name || '').trim()
+  if (!raw || categories.length === 0) return { id: null, name: '', confidence: 'none' }
+  const target = normalizeForMatch(raw)
+  const slugTarget = slugify(raw)
+
+  let exact = categories.find(c => normalizeForMatch(c.name) === target)
+  if (exact) return { id: exact.id, name: exact.name, confidence: 'exact' }
+
+  exact = categories.find(c => c.slug === slugTarget)
+  if (exact) return { id: exact.id, name: exact.name, confidence: 'exact' }
+
+  const sub = categories.find(c => {
+    const cn = normalizeForMatch(c.name)
+    return cn.includes(target) || target.includes(cn)
+  })
+  if (sub) return { id: sub.id, name: sub.name, confidence: 'fuzzy' }
+
+  let best = null
+  let bestDist = Infinity
+  for (const c of categories) {
+    const d = levenshtein(target, normalizeForMatch(c.name))
+    if (d < bestDist) { bestDist = d; best = c }
+  }
+  if (best && bestDist <= Math.max(2, Math.ceil(target.length * 0.3))) {
+    return { id: best.id, name: best.name, confidence: 'fuzzy' }
+  }
+  return { id: null, name: '', confidence: 'none' }
+}
+
+export function findLevelMatch(value, levels = []) {
+  const raw = String(value || '').trim()
+  if (!raw || levels.length === 0) return { code: null, confidence: 'none' }
+  const target = normalizeForMatch(raw)
+
+  let exact = levels.find(l => normalizeForMatch(l.code) === target)
+  if (exact) return { code: exact.code, confidence: 'exact' }
+
+  exact = levels.find(l => l.name && normalizeForMatch(l.name) === target)
+  if (exact) return { code: exact.code, confidence: 'exact' }
+
+  const sub = levels.find(l => {
+    const code = normalizeForMatch(l.code)
+    const name = normalizeForMatch(l.name || '')
+    return code.includes(target) || target.includes(code) || (name && (name.includes(target) || target.includes(name)))
+  })
+  if (sub) return { code: sub.code, confidence: 'fuzzy' }
+
+  let best = null
+  let bestDist = Infinity
+  for (const l of levels) {
+    const dCode = levenshtein(target, normalizeForMatch(l.code))
+    const dName = l.name ? levenshtein(target, normalizeForMatch(l.name)) : Infinity
+    const d = Math.min(dCode, dName)
+    if (d < bestDist) { bestDist = d; best = l }
+  }
+  if (best && bestDist <= 2) {
+    return { code: best.code, confidence: 'fuzzy' }
+  }
+  return { code: null, confidence: 'none' }
+}
+
 function readImportRow(row, categories = []) {
   const lower = Object.fromEntries(Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value]))
   const categoryName = String(lower.category || lower['chủ đề'] || lower.topic || '').trim()
@@ -700,6 +795,182 @@ export async function importWords(rows, categories = [], { onProgress } = {}) {
   return { inserted, updated, all: [...inserted, ...updated] }
 }
 
+export async function previewWordsImport(rows, categories = [], levels = []) {
+  const client = requireSupabase()
+
+  const parsedRows = rows
+    .map((row, index) => ({ index: index + 2, parsed: readImportRow(row, categories) }))
+    .filter(r => String(r.parsed.word || '').trim())
+
+  const dedupedKeys = new Set()
+  const dedupedRows = []
+  for (const r of parsedRows) {
+    const norm = String(r.parsed.word).trim().toLowerCase()
+    const lang = normalizeLanguage(r.parsed.language)
+    const key = `${norm}|${lang}`
+    if (dedupedKeys.has(key)) continue
+    dedupedKeys.add(key)
+    dedupedRows.push(r)
+  }
+
+  const normalizedWords = [...new Set(dedupedRows.map(r => String(r.parsed.word).trim().toLowerCase()))]
+  const existingIdByKey = new Map()
+  if (normalizedWords.length > 0) {
+    const { data: existing, error } = await client
+      .from('words')
+      .select('id, normalized_word, language, created_at')
+      .in('normalized_word', normalizedWords)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    for (const w of existing || []) {
+      const key = `${w.normalized_word}|${w.language || 'english'}`
+      if (!existingIdByKey.has(key)) existingIdByKey.set(key, w.id)
+    }
+  }
+
+  let newCount = 0
+  let updateCount = 0
+  let skipCount = 0
+  const previewRows = dedupedRows.map(r => {
+    const norm = String(r.parsed.word).trim().toLowerCase()
+    const lang = normalizeLanguage(r.parsed.language)
+    const existingId = existingIdByKey.get(`${norm}|${lang}`)
+
+    const categoryRaw = r.parsed.categoryName || ''
+    const categoryMatch = categoryRaw
+      ? findCategoryMatch(categoryRaw, categories)
+      : { id: r.parsed.category_id || null, name: '', confidence: 'none' }
+
+    const levelRaw = String(r.parsed.level || '').trim()
+    const levelMatch = levelRaw
+      ? findLevelMatch(levelRaw, levels)
+      : { code: null, confidence: 'none' }
+
+    let status = 'new'
+    let reason = ''
+    if (existingId) {
+      status = 'update'
+      updateCount += 1
+    } else {
+      const meaning = String(r.parsed.vietnamese_definition || '').trim()
+      if (!meaning) {
+        status = 'skip'
+        reason = 'Thiếu nghĩa tiếng Việt — bỏ qua'
+        skipCount += 1
+      } else {
+        newCount += 1
+      }
+    }
+    return {
+      index: r.index,
+      existingId: existingId || null,
+      word: String(r.parsed.word || '').trim(),
+      language: r.parsed.language,
+      type: r.parsed.type || 'other',
+      ipa: String(r.parsed.ipa || '').trim(),
+      vietnamese_definition: String(r.parsed.vietnamese_definition || '').trim(),
+      example_sentence: String(r.parsed.example_sentence || '').trim(),
+      root_word: String(r.parsed.root_word || '').trim(),
+      family_words: String(r.parsed.family_words || ''),
+      synonyms: String(r.parsed.synonyms || ''),
+      antonyms: String(r.parsed.antonyms || ''),
+      categoryRaw,
+      categoryId: categoryMatch.id,
+      categoryName: categoryMatch.name || categoryRaw,
+      categoryConfidence: categoryMatch.confidence,
+      levelRaw,
+      level: levelMatch.code,
+      levelConfidence: levelMatch.confidence,
+      status,
+      reason,
+    }
+  })
+
+  return {
+    rows: previewRows,
+    totalParsed: parsedRows.length,
+    deduped: dedupedRows.length,
+    newCount,
+    updateCount,
+    skipCount,
+  }
+}
+
+export async function importResolvedWords(previewRows, { onProgress } = {}) {
+  const client = requireSupabase()
+  const report = (event) => { try { onProgress?.(event) } catch {} }
+
+  const writable = previewRows.filter(r => r.status !== 'skip' && r.word)
+  if (writable.length === 0) throw new Error('Không có dòng để import.')
+
+  const toInsert = []
+  const updateOps = []
+
+  for (const r of writable) {
+    if (r.existingId) {
+      const fields = {}
+      if (WORD_TYPES.includes(r.type)) fields.type = r.type
+      if (r.ipa) fields.ipa = r.ipa
+      if (r.vietnamese_definition) fields.vietnamese_definition = r.vietnamese_definition
+      if (r.example_sentence) fields.example_sentence = r.example_sentence
+      if (r.root_word) fields.root_word = r.root_word
+      if (r.family_words) fields.family_words = splitList(r.family_words)
+      if (r.synonyms) fields.synonyms = splitList(r.synonyms)
+      if (r.antonyms) fields.antonyms = splitList(r.antonyms)
+      if (r.categoryId) fields.category_id = r.categoryId
+      if (r.level) fields.level = r.level
+      if (WORD_LANGUAGES.includes(r.language)) fields.language = r.language
+      if (Object.keys(fields).length > 0) updateOps.push({ id: r.existingId, fields })
+    } else {
+      toInsert.push(wordRowFromForm({
+        word: r.word,
+        type: r.type,
+        ipa: r.ipa,
+        vietnamese_definition: r.vietnamese_definition,
+        example_sentence: r.example_sentence,
+        root_word: r.root_word,
+        family_words: r.family_words,
+        synonyms: r.synonyms,
+        antonyms: r.antonyms,
+        category_id: r.categoryId,
+        level: r.level,
+        language: r.language,
+        source: 'excel',
+      }))
+    }
+  }
+
+  const inserted = []
+  const updated = []
+  const totalWrites = toInsert.length + updateOps.length
+  let processed = 0
+
+  if (toInsert.length > 0) {
+    report({ phase: 'inserting', current: processed, total: totalWrites })
+    const { data, error } = await client.from('words').insert(toInsert).select('*')
+    if (error) throw error
+    inserted.push(...(data || []))
+    processed += toInsert.length
+    report({ phase: 'inserting', current: processed, total: totalWrites })
+  }
+
+  for (const op of updateOps) {
+    const { data, error } = await client
+      .from('words')
+      .update(op.fields)
+      .eq('id', op.id)
+      .select('*')
+      .single()
+    if (error) throw error
+    if (data) updated.push(data)
+    processed += 1
+    report({ phase: 'updating', current: processed, total: totalWrites })
+  }
+
+  report({ phase: 'done', current: totalWrites, total: totalWrites })
+  return { inserted, updated, all: [...inserted, ...updated] }
+}
+
 function readSentenceImportRow(row) {
   const lower = Object.fromEntries(Object.entries(row).map(([key, value]) => [String(key).trim().toLowerCase(), value]))
   const sentence = lower.sentence || lower.english_sentence || lower.english || lower.text || lower.cau || lower['cau tieng anh']
@@ -719,6 +990,62 @@ function readSentenceImportRow(row) {
 
 export function mapImportedSentenceRow(row) {
   return readSentenceImportRow(row)
+}
+
+export async function previewSentencesImport(rows) {
+  const client = requireSupabase()
+
+  const parsedRows = rows
+    .map((row, index) => ({ index: index + 2, parsed: readSentenceImportRow(row) }))
+    .filter(r => r.parsed.sentence)
+
+  const dedupedKeys = new Set()
+  const dedupedRows = []
+  for (const r of parsedRows) {
+    const key = `${r.parsed.sentence.trim().toLowerCase()}|${r.parsed.language}`
+    if (dedupedKeys.has(key)) continue
+    dedupedKeys.add(key)
+    dedupedRows.push(r)
+  }
+
+  const normalizedSentences = [...new Set(dedupedRows.map(r => r.parsed.sentence.trim().toLowerCase()))]
+  const existingByKey = new Set()
+  if (normalizedSentences.length > 0) {
+    const { data, error } = await client
+      .from('sentences')
+      .select('normalized_sentence, language')
+      .in('normalized_sentence', normalizedSentences)
+    if (error) throw error
+    for (const s of data || []) {
+      existingByKey.add(`${s.normalized_sentence}|${s.language || 'english'}`)
+    }
+  }
+
+  let newCount = 0
+  let updateCount = 0
+  const previewRows = dedupedRows.map(r => {
+    const key = `${r.parsed.sentence.trim().toLowerCase()}|${r.parsed.language}`
+    const exists = existingByKey.has(key)
+    if (exists) updateCount += 1
+    else newCount += 1
+    return {
+      index: r.index,
+      sentence: r.parsed.sentence,
+      language: r.parsed.language,
+      vietnamese_translation: r.parsed.vietnamese_translation,
+      topic: r.parsed.topic || '',
+      level: r.parsed.level || '',
+      status: exists ? 'update' : 'new',
+    }
+  })
+
+  return {
+    rows: previewRows,
+    totalParsed: parsedRows.length,
+    deduped: dedupedRows.length,
+    newCount,
+    updateCount,
+  }
 }
 
 export async function importSentences(rows, { onProgress } = {}) {
@@ -764,6 +1091,44 @@ export function mapImportedCategoryRow(row) {
     slug,
     level: LEVELS.includes(levelRaw) ? levelRaw : null,
     description: String(lower.description || lower['mô tả'] || lower['mo ta'] || '').trim() || null,
+  }
+}
+
+export async function previewCategoriesImport(rows) {
+  const client = requireSupabase()
+  const mapped = rows
+    .map((row, index) => ({ index: index + 2, parsed: mapImportedCategoryRow(row) }))
+    .filter(r => r.parsed.name)
+
+  const slugs = [...new Set(mapped.map(r => r.parsed.slug))]
+  const existingSlugs = new Set()
+  if (slugs.length > 0) {
+    const { data, error } = await client.from('categories').select('slug').in('slug', slugs)
+    if (error) throw error
+    for (const c of data || []) existingSlugs.add(c.slug)
+  }
+
+  let newCount = 0
+  let updateCount = 0
+  const previewRows = mapped.map(r => {
+    const exists = existingSlugs.has(r.parsed.slug)
+    if (exists) updateCount += 1
+    else newCount += 1
+    return {
+      index: r.index,
+      name: r.parsed.name,
+      slug: r.parsed.slug,
+      level: r.parsed.level || '',
+      description: r.parsed.description || '',
+      status: exists ? 'update' : 'new',
+    }
+  })
+
+  return {
+    rows: previewRows,
+    totalParsed: mapped.length,
+    newCount,
+    updateCount,
   }
 }
 

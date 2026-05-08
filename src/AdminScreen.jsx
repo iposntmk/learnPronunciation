@@ -14,8 +14,12 @@ import {
   fetchAllSentences,
   fetchAllWords,
   importCategories,
+  importResolvedWords,
   importSentences,
   importWords,
+  previewCategoriesImport,
+  previewSentencesImport,
+  previewWordsImport,
   listCategories,
   listLevels,
   listProfiles,
@@ -175,6 +179,7 @@ export default function AdminScreen({ profile, onBack }) {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [languageFilter, setLanguageFilter] = useState('all')
   const [wordStatusFilter, setWordStatusFilter] = useState('all')
+  const [wordLevelFilter, setWordLevelFilter] = useState('all')
   const [visibleWordLimit, setVisibleWordLimit] = useState(WORDS_PAGE_SIZE)
   const [wordForm, setWordForm] = useState(emptyWord)
   const [wordFormOpen, setWordFormOpen] = useState(false)
@@ -186,6 +191,9 @@ export default function AdminScreen({ profile, onBack }) {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [importProgress, setImportProgress] = useState(null)
+  const [wordImportPreview, setWordImportPreview] = useState(null)
+  const [sentenceImportPreview, setSentenceImportPreview] = useState(null)
+  const [categoryImportPreview, setCategoryImportPreview] = useState(null)
   const [wordsDeleteMode, setWordsDeleteMode] = useState(false)
   const [selectedWordIds, setSelectedWordIds] = useState(() => new Set())
   const [sentencesDeleteMode, setSentencesDeleteMode] = useState(false)
@@ -343,7 +351,7 @@ export default function AdminScreen({ profile, onBack }) {
 
   useEffect(() => {
     setVisibleWordLimit(WORDS_PAGE_SIZE)
-  }, [allWords, categoryFilter, deferredQuery, languageFilter, wordStatusFilter])
+  }, [allWords, categoryFilter, deferredQuery, languageFilter, wordLevelFilter, wordStatusFilter])
 
   useEffect(() => {
     if (tab !== 'sentences') return
@@ -367,6 +375,10 @@ export default function AdminScreen({ profile, onBack }) {
     let list = allWords
     if (categoryFilter !== 'all') list = list.filter(w => (w.category_id || '') === categoryFilter)
     if (languageFilter !== 'all') list = list.filter(w => (w.language || 'english') === languageFilter)
+    if (wordLevelFilter !== 'all') {
+      if (wordLevelFilter === 'none') list = list.filter(w => !w.level)
+      else list = list.filter(w => w.level === wordLevelFilter)
+    }
     switch (wordStatusFilter) {
       case 'missing-ipa':
         list = list.filter(w => !w.ipa || !String(w.ipa).trim())
@@ -395,7 +407,7 @@ export default function AdminScreen({ profile, onBack }) {
       )
     }
     return list
-  }, [allWords, categoryFilter, languageFilter, wordStatusFilter, deferredQuery])
+  }, [allWords, categoryFilter, languageFilter, wordLevelFilter, wordStatusFilter, deferredQuery])
 
   const visibleWords = useMemo(
     () => displayedWords.slice(0, visibleWordLimit),
@@ -601,24 +613,50 @@ export default function AdminScreen({ profile, onBack }) {
     if (!file) return
     setLoading(true)
     setMessage('')
-    setImportProgress({ phase: 'reading', current: 0, total: 0 })
     try {
       const buf = await file.arrayBuffer()
       const workbook = read(buf)
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const rows = utils.sheet_to_json(sheet, { defval: '' })
-      const { inserted, updated } = await importWords(rows, categories, {
-        onProgress: (event) => setImportProgress(event),
+      const preview = await previewWordsImport(rows, categories, levelsList)
+      if (preview.totalParsed === 0) {
+        setToast({ type: 'error', message: 'Không có dòng hợp lệ để import.' })
+        return
+      }
+      setWordImportPreview({ ...preview, fileName: file.name })
+    } catch (err) {
+      setToast({ type: 'error', message: `Đọc file lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+      event.target.value = ''
+    }
+  }
+
+  const confirmWordImport = async () => {
+    if (!wordImportPreview) return
+    setLoading(true)
+    setImportProgress({ phase: 'reading', current: 0, total: 0 })
+    try {
+      const { inserted, updated } = await importResolvedWords(wordImportPreview.rows, {
+        onProgress: (e) => setImportProgress(e),
       })
       await refreshWords()
+      setWordImportPreview(null)
       setToast({ type: 'success', message: `Import xong: thêm mới ${inserted.length}, cập nhật ${updated.length}.` })
     } catch (err) {
       setToast({ type: 'error', message: `Import lỗi: ${err.message}` })
     } finally {
       setLoading(false)
       setImportProgress(null)
-      event.target.value = ''
     }
+  }
+
+  const updateWordPreviewRow = (rowIndex, patch) => {
+    setWordImportPreview(prev => {
+      if (!prev) return prev
+      const rows = prev.rows.map((row, i) => (i === rowIndex ? { ...row, ...patch } : row))
+      return { ...prev, rows }
+    })
   }
 
   const exportWords = () => {
@@ -692,23 +730,41 @@ export default function AdminScreen({ profile, onBack }) {
     if (!file) return
     setLoading(true)
     setMessage('')
-    setImportProgress({ phase: 'reading', current: 0, total: 0 })
     try {
       const buf = await file.arrayBuffer()
       const workbook = read(buf)
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const rows = utils.sheet_to_json(sheet, { defval: '' })
-      const imported = await importSentences(rows, {
-        onProgress: (event) => setImportProgress(event),
+      const preview = await previewSentencesImport(rows)
+      if (preview.totalParsed === 0) {
+        setToast({ type: 'error', message: 'Không có dòng câu hợp lệ để import.' })
+        return
+      }
+      setSentenceImportPreview({ ...preview, rawRows: rows, fileName: file.name })
+    } catch (err) {
+      setToast({ type: 'error', message: `Đọc file lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+      event.target.value = ''
+    }
+  }
+
+  const confirmSentenceImport = async () => {
+    if (!sentenceImportPreview) return
+    setLoading(true)
+    setImportProgress({ phase: 'reading', current: 0, total: 0 })
+    try {
+      const imported = await importSentences(sentenceImportPreview.rawRows, {
+        onProgress: (e) => setImportProgress(e),
       })
       await refreshSentences()
+      setSentenceImportPreview(null)
       setToast({ type: 'success', message: `Imported ${imported.length} sentences.` })
     } catch (err) {
       setToast({ type: 'error', message: `Sentence import failed: ${err.message}` })
     } finally {
       setLoading(false)
       setImportProgress(null)
-      event.target.value = ''
     }
   }
 
@@ -762,14 +818,32 @@ export default function AdminScreen({ profile, onBack }) {
       const workbook = read(buf)
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const rows = utils.sheet_to_json(sheet, { defval: '' })
-      const imported = await importCategories(rows)
-      await refreshCategories()
-      setMessage(`Đã import ${imported.length} chủ đề từ Excel.`)
+      const preview = await previewCategoriesImport(rows)
+      if (preview.totalParsed === 0) {
+        setToast({ type: 'error', message: 'Không có chủ đề hợp lệ để import.' })
+        return
+      }
+      setCategoryImportPreview({ ...preview, rawRows: rows, fileName: file.name })
     } catch (err) {
-      setMessage(err.message)
+      setToast({ type: 'error', message: `Đọc file lỗi: ${err.message}` })
     } finally {
       setLoading(false)
       event.target.value = ''
+    }
+  }
+
+  const confirmCategoryImport = async () => {
+    if (!categoryImportPreview) return
+    setLoading(true)
+    try {
+      const imported = await importCategories(categoryImportPreview.rawRows)
+      await refreshCategories()
+      setCategoryImportPreview(null)
+      setToast({ type: 'success', message: `Đã import ${imported.length} chủ đề.` })
+    } catch (err) {
+      setToast({ type: 'error', message: `Import chủ đề lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -848,6 +922,238 @@ export default function AdminScreen({ profile, onBack }) {
         </div>
       )}
 
+      {wordImportPreview && (
+        <div className="fixed inset-0 z-40 bg-gray-950/80 backdrop-blur-sm px-4 py-6 overflow-y-auto">
+          <div className="mx-auto max-w-6xl rounded-2xl border border-white/10 bg-gray-950 shadow-2xl">
+            <div className="flex flex-col gap-2 border-b border-white/10 p-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Xem trước import từ</h2>
+                <p className="text-xs text-white/45">
+                  {wordImportPreview.fileName} · {wordImportPreview.totalParsed} dòng · sau dedup {wordImportPreview.deduped}
+                </p>
+                <p className="text-xs text-emerald-300/90 mt-1">
+                  Mới: {wordImportPreview.newCount} · Cập nhật: {wordImportPreview.updateCount} · Bỏ qua: {wordImportPreview.skipCount}
+                </p>
+                <p className="text-[11px] text-white/40 mt-1">
+                  Category & Level đã được tự gán theo DB (gần đúng / đúng nhất). Bấm vào dropdown để sửa từng dòng.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWordImportPreview(null)}
+                  disabled={loading}
+                  className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  Huỷ
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmWordImport}
+                  disabled={loading}
+                  className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-bold text-gray-950 disabled:opacity-40"
+                >
+                  OK, import
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[70vh] overflow-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="sticky top-0 bg-gray-900 text-white/60">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Dòng</th>
+                    <th className="px-3 py-2 font-semibold">Từ</th>
+                    <th className="px-3 py-2 font-semibold">Ngôn ngữ</th>
+                    <th className="px-3 py-2 font-semibold">Loại</th>
+                    <th className="px-3 py-2 font-semibold">IPA</th>
+                    <th className="px-3 py-2 font-semibold">Nghĩa</th>
+                    <th className="px-3 py-2 font-semibold min-w-[180px]">Category (gán DB)</th>
+                    <th className="px-3 py-2 font-semibold min-w-[140px]">Level (gán DB)</th>
+                    <th className="px-3 py-2 font-semibold">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {wordImportPreview.rows.slice(0, 300).map((row, i) => (
+                    <tr key={`${row.index}-${row.word}-${row.language}`}>
+                      <td className="px-3 py-2 text-white/45">{row.index}</td>
+                      <td className="px-3 py-2 font-semibold text-white">{row.word}</td>
+                      <td className="px-3 py-2 text-white/70">{LANGUAGE_LABEL[row.language] || row.language}</td>
+                      <td className="px-3 py-2 text-white/70">{row.type || 'other'}</td>
+                      <td className="px-3 py-2 text-white/70">{row.ipa || '-'}</td>
+                      <td className="px-3 py-2 text-white/70 max-w-[220px] truncate" title={row.vietnamese_definition}>{row.vietnamese_definition || '-'}</td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={row.categoryId || ''}
+                          onChange={e => updateWordPreviewRow(i, { categoryId: e.target.value || null, categoryConfidence: 'manual' })}
+                          className={`w-full rounded-md border bg-gray-900 text-white text-xs px-2 py-1 outline-none ${
+                            row.categoryConfidence === 'exact' ? 'border-emerald-400/40' :
+                            row.categoryConfidence === 'fuzzy' ? 'border-amber-400/50' :
+                            row.categoryConfidence === 'manual' ? 'border-cyan-400/40' :
+                            'border-white/10'
+                          }`}
+                        >
+                          <option value="">— None —</option>
+                          {categoryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        </select>
+                        {row.categoryRaw && (
+                          <div className="text-[10px] text-white/40 mt-0.5 truncate" title={row.categoryRaw}>
+                            Excel: "{row.categoryRaw}" {row.categoryConfidence === 'fuzzy' ? '(gần đúng)' : row.categoryConfidence === 'none' ? '(không khớp)' : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={row.level || ''}
+                          onChange={e => updateWordPreviewRow(i, { level: e.target.value || null, levelConfidence: 'manual' })}
+                          className={`w-full rounded-md border bg-gray-900 text-white text-xs px-2 py-1 outline-none ${
+                            row.levelConfidence === 'exact' ? 'border-emerald-400/40' :
+                            row.levelConfidence === 'fuzzy' ? 'border-amber-400/50' :
+                            row.levelConfidence === 'manual' ? 'border-cyan-400/40' :
+                            'border-white/10'
+                          }`}
+                        >
+                          <option value="">— None —</option>
+                          {levelOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                        {row.levelRaw && (
+                          <div className="text-[10px] text-white/40 mt-0.5">
+                            Excel: "{row.levelRaw}" {row.levelConfidence === 'fuzzy' ? '(gần đúng)' : row.levelConfidence === 'none' ? '(không khớp)' : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                          row.status === 'new' ? 'bg-emerald-500/20 text-emerald-200' :
+                          row.status === 'update' ? 'bg-cyan-500/20 text-cyan-200' :
+                          'bg-white/10 text-white/50'
+                        }`}>
+                          {row.status === 'new' ? 'Mới' : row.status === 'update' ? 'Cập nhật' : 'Bỏ qua'}
+                        </span>
+                        {row.reason && <div className="text-[10px] text-white/40 mt-0.5">{row.reason}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {wordImportPreview.rows.length > 300 && (
+                <div className="p-3 text-center text-xs text-white/45">Chỉ hiện 300/{wordImportPreview.rows.length} dòng đầu — bấm "OK, import" để xử lý toàn bộ (các dòng sau dùng giá trị tự động gán).</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sentenceImportPreview && (
+        <div className="fixed inset-0 z-40 bg-gray-950/80 backdrop-blur-sm px-4 py-6 overflow-y-auto">
+          <div className="mx-auto max-w-6xl rounded-2xl border border-white/10 bg-gray-950 shadow-2xl">
+            <div className="flex flex-col gap-2 border-b border-white/10 p-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Xem trước import câu</h2>
+                <p className="text-xs text-white/45">
+                  {sentenceImportPreview.fileName} · {sentenceImportPreview.totalParsed} dòng · sau dedup {sentenceImportPreview.deduped}
+                </p>
+                <p className="text-xs text-emerald-300/90 mt-1">
+                  Mới: {sentenceImportPreview.newCount} · Cập nhật: {sentenceImportPreview.updateCount}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setSentenceImportPreview(null)} disabled={loading} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Huỷ</button>
+                <button type="button" onClick={confirmSentenceImport} disabled={loading} className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-bold text-gray-950 disabled:opacity-40">OK, import</button>
+              </div>
+            </div>
+            <div className="max-h-[70vh] overflow-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="sticky top-0 bg-gray-900 text-white/60">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Dòng</th>
+                    <th className="px-3 py-2 font-semibold">Câu</th>
+                    <th className="px-3 py-2 font-semibold">Ngôn ngữ</th>
+                    <th className="px-3 py-2 font-semibold">Bản dịch</th>
+                    <th className="px-3 py-2 font-semibold">Topic</th>
+                    <th className="px-3 py-2 font-semibold">Level</th>
+                    <th className="px-3 py-2 font-semibold">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {sentenceImportPreview.rows.slice(0, 300).map(row => (
+                    <tr key={`${row.index}-${row.language}`}>
+                      <td className="px-3 py-2 text-white/45">{row.index}</td>
+                      <td className="px-3 py-2 text-white max-w-[320px] truncate" title={row.sentence}>{row.sentence}</td>
+                      <td className="px-3 py-2 text-white/70">{LANGUAGE_LABEL[row.language] || row.language}</td>
+                      <td className="px-3 py-2 text-white/70 max-w-[260px] truncate" title={row.vietnamese_translation}>{row.vietnamese_translation || '-'}</td>
+                      <td className="px-3 py-2 text-white/70">{row.topic || '-'}</td>
+                      <td className="px-3 py-2 text-white/70">{row.level || '-'}</td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                          row.status === 'new' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-cyan-500/20 text-cyan-200'
+                        }`}>
+                          {row.status === 'new' ? 'Mới' : 'Cập nhật'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {sentenceImportPreview.rows.length > 300 && (
+                <div className="p-3 text-center text-xs text-white/45">Chỉ hiện 300/{sentenceImportPreview.rows.length} dòng đầu — bấm "OK, import" để xử lý toàn bộ.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {categoryImportPreview && (
+        <div className="fixed inset-0 z-40 bg-gray-950/80 backdrop-blur-sm px-4 py-6 overflow-y-auto">
+          <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-gray-950 shadow-2xl">
+            <div className="flex flex-col gap-2 border-b border-white/10 p-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold">Xem trước import chủ đề</h2>
+                <p className="text-xs text-white/45">{categoryImportPreview.fileName} · {categoryImportPreview.totalParsed} dòng</p>
+                <p className="text-xs text-emerald-300/90 mt-1">
+                  Mới: {categoryImportPreview.newCount} · Cập nhật: {categoryImportPreview.updateCount}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setCategoryImportPreview(null)} disabled={loading} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Huỷ</button>
+                <button type="button" onClick={confirmCategoryImport} disabled={loading} className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-bold text-gray-950 disabled:opacity-40">OK, import</button>
+              </div>
+            </div>
+            <div className="max-h-[70vh] overflow-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="sticky top-0 bg-gray-900 text-white/60">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Dòng</th>
+                    <th className="px-3 py-2 font-semibold">Tên</th>
+                    <th className="px-3 py-2 font-semibold">Slug</th>
+                    <th className="px-3 py-2 font-semibold">Level</th>
+                    <th className="px-3 py-2 font-semibold">Mô tả</th>
+                    <th className="px-3 py-2 font-semibold">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {categoryImportPreview.rows.slice(0, 300).map(row => (
+                    <tr key={`${row.index}-${row.slug}`}>
+                      <td className="px-3 py-2 text-white/45">{row.index}</td>
+                      <td className="px-3 py-2 text-white">{row.name}</td>
+                      <td className="px-3 py-2 text-white/70">{row.slug}</td>
+                      <td className="px-3 py-2 text-white/70">{row.level || '-'}</td>
+                      <td className="px-3 py-2 text-white/70 max-w-[260px] truncate" title={row.description}>{row.description || '-'}</td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                          row.status === 'new' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-cyan-500/20 text-cyan-200'
+                        }`}>
+                          {row.status === 'new' ? 'Mới' : 'Cập nhật'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === 'words' && (
         <div className="px-4 grid gap-4">
           <section className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
@@ -921,7 +1227,7 @@ export default function AdminScreen({ profile, onBack }) {
                 Tải lại
               </button>
             </div>
-            <div className="grid gap-2 mb-3 sm:grid-cols-3">
+            <div className="grid gap-2 mb-3 sm:grid-cols-2 lg:grid-cols-4">
               <select className={inputClass()} value={languageFilter} onChange={e => setLanguageFilter(e.target.value)}>
                 <option value="all">Tất cả ngôn ngữ</option>
                 {WORD_LANGUAGES.map(l => <option key={l} value={l}>{LANGUAGE_LABEL[l]}</option>)}
@@ -929,6 +1235,11 @@ export default function AdminScreen({ profile, onBack }) {
               <select className={inputClass()} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
                 <option value="all">Tất cả chủ đề</option>
                 {categoryOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+              <select className={inputClass()} value={wordLevelFilter} onChange={e => setWordLevelFilter(e.target.value)}>
+                <option value="all">Tất cả level</option>
+                <option value="none">Chưa có level</option>
+                {levelOptions.map(l => <option key={l} value={l}>{l}</option>)}
               </select>
               <select className={inputClass()} value={wordStatusFilter} onChange={e => setWordStatusFilter(e.target.value)}>
                 <option value="all">Tất cả từ</option>
@@ -1061,6 +1372,7 @@ export default function AdminScreen({ profile, onBack }) {
               </select>
               <select className={inputClass()} value={sentenceLevelFilter} onChange={e => setSentenceLevelFilter(e.target.value)}>
                 <option value="all">All levels</option>
+                <option value="none">No level</option>
                 {levelOptions.map(level => <option key={level} value={level}>{level}</option>)}
               </select>
               <select className={inputClass()} value={sentenceTopicFilter} onChange={e => setSentenceTopicFilter(e.target.value)}>
