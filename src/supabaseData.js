@@ -1,8 +1,66 @@
 import { requireSupabase } from './supabaseClient.js'
 
 export const WORD_TYPES = ['noun', 'verb', 'adjective', 'adverb', 'phrase', 'other']
-export const LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 export const WORD_LANGUAGES = ['english', 'spanish', 'italian', 'french']
+
+const DEFAULT_LEVEL_CODES = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+export let LEVELS = [...DEFAULT_LEVEL_CODES]
+
+export function setKnownLevels(codes) {
+  const next = Array.isArray(codes) ? codes.map(c => String(c).trim()).filter(Boolean) : []
+  LEVELS = next.length > 0 ? next : [...DEFAULT_LEVEL_CODES]
+}
+
+export async function listLevels() {
+  const client = requireSupabase()
+  const { data, error } = await client
+    .from('levels')
+    .select('*')
+    .order('order_index', { ascending: true })
+    .order('code', { ascending: true })
+  if (error) throw error
+  const rows = data || []
+  setKnownLevels(rows.map(r => r.code))
+  return rows
+}
+
+export async function upsertLevel({ code, name = '', order_index = 0, originalCode = null } = {}) {
+  const client = requireSupabase()
+  const trimmedCode = String(code || '').trim()
+  if (!trimmedCode) throw new Error('Mã level không được để trống.')
+  const payload = {
+    code: trimmedCode,
+    name: String(name || '').trim(),
+    order_index: Number.isFinite(Number(order_index)) ? Number(order_index) : 0,
+  }
+
+  if (originalCode && originalCode !== trimmedCode) {
+    const { data, error } = await client
+      .from('levels')
+      .update(payload)
+      .eq('code', originalCode)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }
+
+  const { data, error } = await client
+    .from('levels')
+    .upsert(payload, { onConflict: 'code' })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteLevel(code) {
+  const client = requireSupabase()
+  const trimmedCode = String(code || '').trim()
+  if (!trimmedCode) throw new Error('Thiếu mã level.')
+  const { error } = await client.from('levels').delete().eq('code', trimmedCode)
+  if (error) throw error
+}
 
 const LANGUAGE_ALIASES = {
   english: 'english', en: 'english', eng: 'english', 'en-us': 'english', 'tiếng anh': 'english', 'tieng anh': 'english',
@@ -126,6 +184,25 @@ export async function listSentences({ query = '', topic = 'all', level = 'all', 
     hasMore: offset + items.length < (Number.isFinite(count) ? count : items.length),
     nextOffset: offset + items.length,
   }
+}
+
+export async function fetchAllSentences({ query = '', topic = 'all', level = 'all', language = 'all', pageSize = 1000 } = {}) {
+  const all = []
+  let offset = 0
+  for (;;) {
+    const result = await listSentences({
+      query,
+      topic,
+      level,
+      language,
+      limit: pageSize,
+      offset,
+    })
+    all.push(...result.items)
+    if (!result.hasMore) break
+    offset = result.nextOffset
+  }
+  return all
 }
 
 export async function listSentenceTopics({ language = 'all', level = 'all' } = {}) {
@@ -345,6 +422,26 @@ export async function deleteWord(id) {
   if (error) throw error
 }
 
+export async function deleteWordsBulk(ids) {
+  const client = requireSupabase()
+  if (!ids?.length) return
+  const batchSize = 100
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const { error } = await client.from('words').delete().in('id', ids.slice(i, i + batchSize))
+    if (error) throw error
+  }
+}
+
+export async function deleteSentencesBulk(ids) {
+  const client = requireSupabase()
+  if (!ids?.length) return
+  const batchSize = 100
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const { error } = await client.from('sentences').delete().in('id', ids.slice(i, i + batchSize))
+    if (error) throw error
+  }
+}
+
 export async function findOrCreateWord(word, meta = {}) {
   const client = requireSupabase()
   const normalized = normalizeWord(word)
@@ -461,6 +558,7 @@ function readImportRow(row, categories = []) {
     synonyms: lower.synonyms || lower['từ đồng nghĩa'],
     antonyms: lower.antonyms || lower['từ trái nghĩa'],
     category_id: category?.id || null,
+    categoryName,
     categoryProvided: Boolean(categoryName),
     level: lower.level || lower['cấp độ'],
     language: normalizeLanguage(rawLanguage),
@@ -512,6 +610,14 @@ export async function importWords(rows, categories = [], { onProgress } = {}) {
     .map(row => readImportRow(row, categories))
     .filter(p => String(p.word || '').trim())
   if (parsedRows.length === 0) throw new Error('Không có dòng hợp lệ để import.')
+
+  const missingCategories = [...new Set(parsedRows
+    .filter(p => p.categoryProvided && !p.category_id)
+    .map(p => p.categoryName)
+    .filter(Boolean))]
+  if (missingCategories.length > 0) {
+    throw new Error(`Category chưa có trong DB: ${missingCategories.join(', ')}. Hãy thêm category trước khi import.`)
+  }
 
   const dedupedByKey = new Map()
   for (const parsed of parsedRows) {

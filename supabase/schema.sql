@@ -4,10 +4,17 @@
 create extension if not exists pgcrypto;
 
 create type public.word_type as enum ('noun', 'verb', 'adjective', 'adverb', 'phrase', 'other');
-create type public.difficulty_level as enum ('A1', 'A2', 'B1', 'B2', 'C1', 'C2');
 create type public.ipa_status as enum ('correct', 'incorrect');
 create type public.app_role as enum ('admin', 'teacher', 'student');
 create type public.word_language as enum ('english', 'spanish', 'italian', 'french');
+
+create table public.levels (
+  code text primary key,
+  name text not null default '',
+  order_index integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -25,7 +32,7 @@ create table public.categories (
   name text not null,
   slug text not null unique,
   description text,
-  level public.difficulty_level,
+  level text references public.levels(code) on delete set null on update cascade,
   parent_id uuid references public.categories(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -45,7 +52,7 @@ create table public.words (
   antonyms text[] not null default '{}',
   category_id uuid references public.categories(id) on delete set null,
   category_key uuid generated always as (coalesce(category_id, '00000000-0000-0000-0000-000000000000'::uuid)) stored,
-  level public.difficulty_level,
+  level text references public.levels(code) on delete set null on update cascade,
   source text not null default 'manual',
   flagged_incorrect boolean not null default false,
   language public.word_language not null default 'english',
@@ -87,7 +94,7 @@ create table public.sentences (
   vietnamese_translation text not null default '',
   topic text,
   language public.word_language not null default 'english',
-  level public.difficulty_level,
+  level text references public.levels(code) on delete set null on update cascade,
   source text not null default 'manual',
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -144,6 +151,9 @@ begin
   return new;
 end;
 $$;
+
+create trigger levels_updated_at before update on public.levels
+for each row execute function public.set_updated_at();
 
 create trigger profiles_updated_at before update on public.profiles
 for each row execute function public.set_updated_at();
@@ -293,7 +303,7 @@ create or replace function public.get_or_create_word(
   p_ipa text default null,
   p_vietnamese_definition text default 'Google Translate available',
   p_example_sentence text default null,
-  p_level public.difficulty_level default null,
+  p_level text default null,
   p_language public.word_language default 'english',
   p_source text default 'app'
 )
@@ -304,6 +314,7 @@ set search_path = public
 as $$
 declare
   v_word public.words;
+  v_level text;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
@@ -320,6 +331,11 @@ begin
     return v_word;
   end if;
 
+  v_level := nullif(trim(coalesce(p_level, '')), '');
+  if v_level is not null and not exists (select 1 from public.levels where code = v_level) then
+    v_level := null;
+  end if;
+
   insert into public.words (
     word, type, ipa, vietnamese_definition, example_sentence, level, language, source, created_by
   )
@@ -329,7 +345,7 @@ begin
     nullif(trim(coalesce(p_ipa, '')), ''),
     coalesce(nullif(trim(coalesce(p_vietnamese_definition, '')), ''), 'Google Translate available'),
     nullif(trim(coalesce(p_example_sentence, '')), ''),
-    p_level,
+    v_level,
     coalesce(p_language, 'english'::public.word_language),
     coalesce(nullif(trim(coalesce(p_source, '')), ''), 'app'),
     auth.uid()
@@ -417,6 +433,7 @@ create index pronunciation_attempts_user_word_idx on public.pronunciation_attemp
 create index user_sentence_progress_user_idx on public.user_sentence_progress(user_id);
 create index sentence_pronunciation_attempts_user_sentence_idx on public.sentence_pronunciation_attempts(user_id, sentence_id, created_at desc);
 
+alter table public.levels enable row level security;
 alter table public.profiles enable row level security;
 alter table public.categories enable row level security;
 alter table public.words enable row level security;
@@ -426,6 +443,17 @@ alter table public.sentences enable row level security;
 alter table public.user_sentence_progress enable row level security;
 alter table public.sentence_pronunciation_attempts enable row level security;
 alter table public.import_batches enable row level security;
+
+create policy "Authenticated users read levels"
+on public.levels for select
+to authenticated
+using (true);
+
+create policy "Admins manage levels"
+on public.levels for all
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
 
 create policy "Profiles are visible to authenticated users"
 on public.profiles for select
@@ -528,6 +556,16 @@ on public.import_batches for all
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+insert into public.levels (code, name, order_index)
+values
+  ('A1', 'Beginner', 1),
+  ('A2', 'Elementary', 2),
+  ('B1', 'Intermediate', 3),
+  ('B2', 'Upper Intermediate', 4),
+  ('C1', 'Advanced', 5),
+  ('C2', 'Proficient', 6)
+on conflict (code) do nothing;
 
 insert into public.categories (name, slug, description, level)
 values

@@ -12,7 +12,7 @@ import { speakNeural, speakPhoneme } from './tts.js'
 import { COMMON_3000_LEVELS } from './commonWords.js'
 import AuthGate from './AuthGate.jsx'
 import { supabase } from './supabaseClient.js'
-import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listMyProgress, listMySentenceProgress, listSentenceTopics, listSentences, listWords, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
+import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listLevels, listMyProgress, listMySentenceProgress, listSentenceTopics, listSentences, listWords, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
 
 const AdminScreen = lazy(() => import('./AdminScreen.jsx'))
 
@@ -3232,6 +3232,19 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
   const [topicFilter, setTopicFilter] = useState('all')
   const [languageFilter, setLanguageFilter] = useState('all')
   const [topicOptions, setTopicOptions] = useState([])
+  const [levelOptions, setLevelOptions] = useState(LEVELS)
+
+  useEffect(() => {
+    let cancelled = false
+    listLevels()
+      .then(rows => {
+        if (cancelled) return
+        const codes = rows.map(r => r.code)
+        if (codes.length > 0) setLevelOptions(codes)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -3283,7 +3296,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
       setTotal(result.total || 0)
       setHasMore(!!result.hasMore)
     } catch (err) {
-      setError(err.message || ‘Không tải được câu luyện nói.’)
+      setError(err.message || 'Không tải được câu luyện nói.')
     } finally {
       setLoadingMore(false)
     }
@@ -3310,7 +3323,7 @@ function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
           </select>
           <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
             <option value="all">All levels</option>
-            {LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
+            {levelOptions.map(level => <option key={level} value={level}>{level}</option>)}
           </select>
           <select value={topicFilter} onChange={e => setTopicFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
             <option value="all">All topics</option>

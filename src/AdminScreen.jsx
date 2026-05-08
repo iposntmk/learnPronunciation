@@ -1,24 +1,30 @@
 import React, { useEffect, useMemo, useState, useCallback, useDeferredValue } from 'react'
 import { read, utils, writeFile } from 'xlsx'
-import { ChevronLeft, Download, Plus, RefreshCw, Search, Trash2, Flag } from 'lucide-react'
+import { CheckSquare, ChevronLeft, Download, Plus, RefreshCw, Search, Square, Trash2, Flag } from 'lucide-react'
 import {
   GENERIC_VIETNAMESE_DEFINITIONS,
   LEVELS,
   WORD_LANGUAGES,
   WORD_TYPES,
   deleteCategory,
+  deleteLevel,
+  deleteSentencesBulk,
   deleteWord,
+  deleteWordsBulk,
+  fetchAllSentences,
   fetchAllWords,
   importCategories,
   importSentences,
   importWords,
   listCategories,
+  listLevels,
   listProfiles,
   listSentenceTopics,
   listSentences,
   setWordFlagged,
   updateProfile,
   upsertCategory,
+  upsertLevel,
   upsertWord,
 } from './supabaseData.js'
 
@@ -76,6 +82,8 @@ const LANGUAGE_LABEL = {
 
 const emptyCategory = { name: '', slug: '', description: '', level: '' }
 
+const emptyLevel = { code: '', name: '', order_index: 0, originalCode: null }
+
 function Field({ label, children }) {
   return (
     <label className="grid gap-1 text-xs text-white/50">
@@ -100,7 +108,25 @@ function importPhaseLabel(phase) {
   }
 }
 
-const WordListItem = React.memo(function WordListItem({ item, onEdit, onToggleFlag, onDelete }) {
+const WordListItem = React.memo(function WordListItem({ item, onEdit, onToggleFlag, onDelete, selectMode, isSelected, onToggleSelect }) {
+  if (selectMode) {
+    return (
+      <button
+        type="button"
+        onClick={() => onToggleSelect(item.id)}
+        className={`w-full text-left rounded-xl border p-3 flex items-start gap-3 ${isSelected ? 'border-red-400/60 bg-red-500/10' : item.flagged_incorrect ? 'border-amber-400/40 bg-amber-400/5' : 'border-white/10 bg-gray-950/40'}`}
+      >
+        <span className={`mt-0.5 ${isSelected ? 'text-red-300' : 'text-white/40'}`}>
+          {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold break-words">{item.word} <span className="text-white/35 text-xs">{item.ipa ? `/${item.ipa}/` : 'Thiếu IPA'}</span></div>
+          <div className="text-white/45 text-xs truncate">{item.vietnamese_definition}</div>
+          <div className="text-white/30 text-[11px] break-words">{LANGUAGE_LABEL[item.language || 'english']} · {item.categories?.name || 'No category'} · {item.level || 'No level'}</div>
+        </div>
+      </button>
+    )
+  }
   return (
     <div className={`rounded-xl border p-3 ${item.flagged_incorrect ? 'border-amber-400/40 bg-amber-400/5' : 'border-white/10 bg-gray-950/40'}`}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 items-start">
@@ -154,9 +180,17 @@ export default function AdminScreen({ profile, onBack }) {
   const [wordFormOpen, setWordFormOpen] = useState(false)
   const [categoryForm, setCategoryForm] = useState(emptyCategory)
   const [categoryFormOpen, setCategoryFormOpen] = useState(false)
+  const [levelsList, setLevelsList] = useState([])
+  const [levelForm, setLevelForm] = useState(emptyLevel)
+  const [levelFormOpen, setLevelFormOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [importProgress, setImportProgress] = useState(null)
+  const [wordsDeleteMode, setWordsDeleteMode] = useState(false)
+  const [selectedWordIds, setSelectedWordIds] = useState(() => new Set())
+  const [sentencesDeleteMode, setSentencesDeleteMode] = useState(false)
+  const [selectedSentenceIds, setSelectedSentenceIds] = useState(() => new Set())
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [toast, setToast] = useState(null)
 
   useEffect(() => {
@@ -186,6 +220,42 @@ export default function AdminScreen({ profile, onBack }) {
   }, [])
 
   const refreshCategories = useCallback(async () => setCategories(await listCategories()), [])
+  const refreshLevels = useCallback(async () => {
+    const rows = await listLevels()
+    setLevelsList(rows)
+  }, [])
+  const saveLevel = useCallback(async (event) => {
+    event?.preventDefault?.()
+    setLoading(true)
+    try {
+      await upsertLevel({
+        code: levelForm.code,
+        name: levelForm.name,
+        order_index: levelForm.order_index,
+        originalCode: levelForm.originalCode,
+      })
+      await refreshLevels()
+      setLevelForm(emptyLevel)
+      setMessage('Đã lưu level.')
+    } catch (err) {
+      setToast({ type: 'error', message: `Lưu level lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+    }
+  }, [levelForm, refreshLevels])
+  const removeLevel = useCallback(async (code) => {
+    setLoading(true)
+    try {
+      await deleteLevel(code)
+      await refreshLevels()
+      if (levelForm.originalCode === code) setLevelForm(emptyLevel)
+      setMessage(`Đã xoá level "${code}". Các từ/chủ đề/câu đang dùng level này đã được set null.`)
+    } catch (err) {
+      setToast({ type: 'error', message: `Xoá level lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+    }
+  }, [levelForm.originalCode, refreshLevels])
   const refreshWords = useCallback(async () => {
     setWordsRefreshing(true)
     try {
@@ -260,6 +330,10 @@ export default function AdminScreen({ profile, onBack }) {
   }, [refreshCategories])
 
   useEffect(() => {
+    refreshLevels().catch(err => setMessage(err.message))
+  }, [refreshLevels])
+
+  useEffect(() => {
     if (tab === 'words' && wordsCacheChecked && !wordsLoaded && !wordsRefreshing) refreshWords()
     if (tab === 'users' && !profilesLoaded) refreshProfiles().catch(err => {
       setProfilesLoaded(true)
@@ -279,11 +353,15 @@ export default function AdminScreen({ profile, onBack }) {
   useEffect(() => {
     if (tab !== 'words') return
     if (wordStatusFilter !== 'missing-root') return
-    if (wordsRefreshing) return
     refreshWords()
-  }, [tab, wordStatusFilter, wordsRefreshing, refreshWords])
+  }, [tab, wordStatusFilter, refreshWords])
 
   const categoryOptions = useMemo(() => categories.map(c => ({ value: c.id, label: `${c.level ? `${c.level} · ` : ''}${c.name}` })), [categories])
+
+  const levelOptions = useMemo(() => {
+    if (levelsList.length > 0) return levelsList.map(l => l.code)
+    return LEVELS
+  }, [levelsList])
 
   const displayedWords = useMemo(() => {
     let list = allWords
@@ -343,6 +421,122 @@ export default function AdminScreen({ profile, onBack }) {
     await deleteWord(id)
     await refreshWords()
   }, [refreshWords])
+
+  const enterWordsDeleteMode = useCallback(() => {
+    setWordsDeleteMode(true)
+    setSelectedWordIds(new Set())
+  }, [])
+
+  const exitWordsDeleteMode = useCallback(() => {
+    setWordsDeleteMode(false)
+    setSelectedWordIds(new Set())
+  }, [])
+
+  const toggleSelectWord = useCallback((id) => {
+    setSelectedWordIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const selectAllWordsInDb = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await fetchAllWords()
+      setAllWords(data)
+      setWordsLoaded(true)
+      const stamp = new Date().toISOString()
+      setWordsCachedAt(stamp)
+      saveCachedWords(data)
+      setSelectedWordIds(new Set(data.map(w => w.id)))
+      setMessage(`Đã chọn ${data.length} từ trong DB.`)
+    } catch (err) {
+      setToast({ type: 'error', message: `Lấy toàn bộ từ DB lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const requestDeleteSelectedWords = useCallback(() => {
+    if (selectedWordIds.size === 0) return
+    setDeleteConfirm({ type: 'words', count: selectedWordIds.size })
+  }, [selectedWordIds.size])
+
+  const executeDeleteWords = useCallback(async () => {
+    setLoading(true)
+    try {
+      const ids = [...selectedWordIds]
+      await deleteWordsBulk(ids)
+      setDeleteConfirm(null)
+      exitWordsDeleteMode()
+      await refreshWords()
+      setMessage(`Đã xoá ${ids.length} từ.`)
+    } catch (err) {
+      setToast({ type: 'error', message: `Xoá từ lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedWordIds, exitWordsDeleteMode, refreshWords])
+
+  const enterSentencesDeleteMode = useCallback(() => {
+    setSentencesDeleteMode(true)
+    setSelectedSentenceIds(new Set())
+  }, [])
+
+  const exitSentencesDeleteMode = useCallback(() => {
+    setSentencesDeleteMode(false)
+    setSelectedSentenceIds(new Set())
+  }, [])
+
+  const toggleSelectSentence = useCallback((id) => {
+    setSelectedSentenceIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const selectAllSentencesInDb = useCallback(async () => {
+    setLoading(true)
+    try {
+      const all = await fetchAllSentences({
+        query: sentenceQuery,
+        language: sentenceLanguageFilter,
+        level: sentenceLevelFilter,
+        topic: sentenceTopicFilter,
+      })
+      setSelectedSentenceIds(new Set(all.map(s => s.id)))
+      setMessage(`Đã chọn ${all.length} câu trong DB (theo bộ lọc).`)
+    } catch (err) {
+      setToast({ type: 'error', message: `Lấy toàn bộ câu DB lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+    }
+  }, [sentenceQuery, sentenceLanguageFilter, sentenceLevelFilter, sentenceTopicFilter])
+
+  const requestDeleteSelectedSentences = useCallback(() => {
+    if (selectedSentenceIds.size === 0) return
+    setDeleteConfirm({ type: 'sentences', count: selectedSentenceIds.size })
+  }, [selectedSentenceIds.size])
+
+  const executeDeleteSentences = useCallback(async () => {
+    setLoading(true)
+    try {
+      const ids = [...selectedSentenceIds]
+      await deleteSentencesBulk(ids)
+      setDeleteConfirm(null)
+      exitSentencesDeleteMode()
+      await refreshSentences()
+      setMessage(`Đã xoá ${ids.length} câu.`)
+    } catch (err) {
+      setToast({ type: 'error', message: `Xoá câu lỗi: ${err.message}` })
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedSentenceIds, exitSentencesDeleteMode, refreshSentences])
 
   const toggleFlag = useCallback(async (item) => {
     const next = !item.flagged_incorrect
@@ -612,7 +806,7 @@ export default function AdminScreen({ profile, onBack }) {
       </div>
 
       <div className="px-4 flex gap-2 mb-4">
-        {['words', 'sentences', 'categories', 'users'].map(item => (
+        {['words', 'sentences', 'categories', 'levels', 'users'].map(item => (
           <button key={item} onClick={() => setTab(item)} className={`flex-1 rounded-xl py-2 text-sm font-semibold ${tab === item ? 'bg-white text-gray-950' : 'bg-white/10 text-white/60'}`}>
             {item}
           </button>
@@ -681,7 +875,7 @@ export default function AdminScreen({ profile, onBack }) {
                 <Field label="Ví dụ"><textarea className={inputClass()} value={wordForm.example_sentence || ''} onChange={e => setWordForm({ ...wordForm, example_sentence: e.target.value })} /></Field>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Field label="Từ gốc"><input className={inputClass()} value={wordForm.root_word || ''} onChange={e => setWordForm({ ...wordForm, root_word: e.target.value })} /></Field>
-                  <Field label="Level"><select className={inputClass()} value={wordForm.level || ''} onChange={e => setWordForm({ ...wordForm, level: e.target.value })}><option value="">None</option>{LEVELS.map(l => <option key={l}>{l}</option>)}</select></Field>
+                  <Field label="Level"><select className={inputClass()} value={wordForm.level || ''} onChange={e => setWordForm({ ...wordForm, level: e.target.value })}><option value="">None</option>{levelOptions.map(l => <option key={l}>{l}</option>)}</select></Field>
                 </div>
                 <Field label="Family words"><input className={inputClass()} value={wordForm.family_words || ''} onChange={e => setWordForm({ ...wordForm, family_words: e.target.value })} placeholder="comma separated" /></Field>
                 <Field label="Từ đồng nghĩa"><input className={inputClass()} value={wordForm.synonyms || ''} onChange={e => setWordForm({ ...wordForm, synonyms: e.target.value })} /></Field>
@@ -752,6 +946,52 @@ export default function AdminScreen({ profile, onBack }) {
               {query !== deferredQuery && <span>· đang lọc...</span>}
               {!wordsRefreshing && wordsCachedAt && <span>· cache {new Date(wordsCachedAt).toLocaleTimeString()}</span>}
             </div>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {!wordsDeleteMode && (
+                <button
+                  type="button"
+                  onClick={enterWordsDeleteMode}
+                  className="rounded-xl bg-red-500/15 text-red-200 border border-red-400/25 px-3 py-2 text-xs font-bold flex items-center gap-2"
+                >
+                  <Trash2 size={14} /> Xoá hàng loạt
+                </button>
+              )}
+              {wordsDeleteMode && (
+                <>
+                  <button
+                    type="button"
+                    onClick={selectAllWordsInDb}
+                    disabled={loading}
+                    className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold disabled:opacity-40 flex items-center gap-2"
+                  >
+                    <CheckSquare size={14} /> Chọn tất cả trong DB
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWordIds(new Set())}
+                    disabled={loading || selectedWordIds.size === 0}
+                    className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold disabled:opacity-40"
+                  >
+                    Bỏ chọn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestDeleteSelectedWords}
+                    disabled={loading || selectedWordIds.size === 0}
+                    className="rounded-xl bg-red-500 text-white px-3 py-2 text-xs font-bold disabled:opacity-40 flex items-center gap-2"
+                  >
+                    <Trash2 size={14} /> Xoá {selectedWordIds.size} từ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exitWordsDeleteMode}
+                    className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold"
+                  >
+                    Huỷ
+                  </button>
+                </>
+              )}
+            </div>
             <div className="grid gap-2">
               {visibleWords.map(item => (
                 <WordListItem
@@ -760,6 +1000,9 @@ export default function AdminScreen({ profile, onBack }) {
                   onEdit={editWord}
                   onToggleFlag={toggleFlag}
                   onDelete={deleteWordAndRefresh}
+                  selectMode={wordsDeleteMode}
+                  isSelected={selectedWordIds.has(item.id)}
+                  onToggleSelect={toggleSelectWord}
                 />
               ))}
               {visibleWords.length < displayedWords.length && (
@@ -818,7 +1061,7 @@ export default function AdminScreen({ profile, onBack }) {
               </select>
               <select className={inputClass()} value={sentenceLevelFilter} onChange={e => setSentenceLevelFilter(e.target.value)}>
                 <option value="all">All levels</option>
-                {LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
+                {levelOptions.map(level => <option key={level} value={level}>{level}</option>)}
               </select>
               <select className={inputClass()} value={sentenceTopicFilter} onChange={e => setSentenceTopicFilter(e.target.value)}>
                 <option value="all">All topics</option>
@@ -829,19 +1072,91 @@ export default function AdminScreen({ profile, onBack }) {
               <span>Loaded {sentences.length}/{sentencesTotal} sentences</span>
               {(sentencesRefreshing || sentencesLoadingMore) && <span>· loading...</span>}
             </div>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {!sentencesDeleteMode && (
+                <button
+                  type="button"
+                  onClick={enterSentencesDeleteMode}
+                  className="rounded-xl bg-red-500/15 text-red-200 border border-red-400/25 px-3 py-2 text-xs font-bold flex items-center gap-2"
+                >
+                  <Trash2 size={14} /> Xoá hàng loạt
+                </button>
+              )}
+              {sentencesDeleteMode && (
+                <>
+                  <button
+                    type="button"
+                    onClick={selectAllSentencesInDb}
+                    disabled={loading}
+                    className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold disabled:opacity-40 flex items-center gap-2"
+                  >
+                    <CheckSquare size={14} /> Chọn tất cả trong DB (theo bộ lọc)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSentenceIds(new Set())}
+                    disabled={loading || selectedSentenceIds.size === 0}
+                    className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold disabled:opacity-40"
+                  >
+                    Bỏ chọn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestDeleteSelectedSentences}
+                    disabled={loading || selectedSentenceIds.size === 0}
+                    className="rounded-xl bg-red-500 text-white px-3 py-2 text-xs font-bold disabled:opacity-40 flex items-center gap-2"
+                  >
+                    <Trash2 size={14} /> Xoá {selectedSentenceIds.size} câu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exitSentencesDeleteMode}
+                    className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold"
+                  >
+                    Huỷ
+                  </button>
+                </>
+              )}
+            </div>
             <div className="grid gap-2">
-              {sentences.map(item => (
-                <div key={item.id} className="rounded-xl border border-white/10 bg-gray-950/40 p-3">
-                  <div className="font-semibold leading-snug break-words">{item.sentence}</div>
-                  <div className="text-white/50 text-sm leading-snug mt-1 break-words">{item.vietnamese_translation || 'No translation'}</div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                    <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_LABEL[item.language || 'english']}</span>
-                    {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
-                    {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
-                    {item.source && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/35">{item.source}</span>}
+              {sentences.map(item => {
+                const isSelected = selectedSentenceIds.has(item.id)
+                if (sentencesDeleteMode) {
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => toggleSelectSentence(item.id)}
+                      className={`w-full text-left rounded-xl border p-3 flex items-start gap-3 ${isSelected ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 bg-gray-950/40'}`}
+                    >
+                      <span className={`mt-0.5 ${isSelected ? 'text-red-300' : 'text-white/40'}`}>
+                        {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold leading-snug break-words">{item.sentence}</div>
+                        <div className="text-white/50 text-sm leading-snug mt-1 break-words">{item.vietnamese_translation || 'No translation'}</div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                          <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_LABEL[item.language || 'english']}</span>
+                          {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
+                          {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                }
+                return (
+                  <div key={item.id} className="rounded-xl border border-white/10 bg-gray-950/40 p-3">
+                    <div className="font-semibold leading-snug break-words">{item.sentence}</div>
+                    <div className="text-white/50 text-sm leading-snug mt-1 break-words">{item.vietnamese_translation || 'No translation'}</div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_LABEL[item.language || 'english']}</span>
+                      {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
+                      {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
+                      {item.source && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/35">{item.source}</span>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               {sentencesHasMore && (
                 <button
                   type="button"
@@ -890,7 +1205,7 @@ export default function AdminScreen({ profile, onBack }) {
               <form onSubmit={saveCategory} className="grid gap-3 border-t border-white/10 p-3">
                 <Field label="Tên chủ đề"><input className={inputClass()} value={categoryForm.name} onChange={e => setCategoryForm({ ...categoryForm, name: e.target.value })} required /></Field>
                 <Field label="Slug"><input className={inputClass()} value={categoryForm.slug || ''} onChange={e => setCategoryForm({ ...categoryForm, slug: e.target.value })} /></Field>
-                <Field label="Level"><select className={inputClass()} value={categoryForm.level || ''} onChange={e => setCategoryForm({ ...categoryForm, level: e.target.value })}><option value="">None</option>{LEVELS.map(l => <option key={l}>{l}</option>)}</select></Field>
+                <Field label="Level"><select className={inputClass()} value={categoryForm.level || ''} onChange={e => setCategoryForm({ ...categoryForm, level: e.target.value })}><option value="">None</option>{levelOptions.map(l => <option key={l}>{l}</option>)}</select></Field>
                 <Field label="Mô tả"><textarea className={inputClass()} value={categoryForm.description || ''} onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })} /></Field>
                 <div className="grid grid-cols-[1fr_auto_auto] gap-2">
                   <button disabled={loading} className="rounded-xl bg-emerald-300 text-gray-950 font-bold py-3">Lưu chủ đề</button>
@@ -908,6 +1223,96 @@ export default function AdminScreen({ profile, onBack }) {
                   <div className="text-white/40 text-xs">{item.slug} · {item.level || 'No level'}</div>
                 </button>
                 <button onClick={async () => { await deleteCategory(item.id); await refreshCategories() }} className="w-9 h-9 rounded-xl bg-red-500/10 text-red-200 flex items-center justify-center"><Trash2 size={15} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === 'levels' && (
+        <div className="px-4 grid gap-3">
+          <p className="text-xs text-white/45 leading-relaxed">
+            Quản lý danh sách level (vd: A1, A2, …). Khi xoá một level, các từ / chủ đề / câu đang dùng sẽ tự động bỏ trống level (set null).
+          </p>
+          <section className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setLevelFormOpen(open => !open)}
+              className="w-full flex items-center justify-between gap-3 p-3 text-left"
+              aria-expanded={levelFormOpen}
+            >
+              <span className="flex items-center gap-2 text-white font-semibold">
+                <Plus size={16} /> {levelForm.originalCode ? `Sửa level "${levelForm.originalCode}"` : 'Thêm level'}
+              </span>
+              <span className="rounded-lg bg-white/10 px-2.5 py-1 text-xs text-white/70">{levelFormOpen ? 'Close' : 'Expand'}</span>
+            </button>
+            {levelFormOpen && (
+              <form onSubmit={saveLevel} className="grid gap-3 border-t border-white/10 p-3">
+                <Field label="Mã level (vd: A1)">
+                  <input
+                    className={inputClass()}
+                    value={levelForm.code}
+                    onChange={e => setLevelForm({ ...levelForm, code: e.target.value })}
+                    required
+                    maxLength={16}
+                  />
+                </Field>
+                <Field label="Tên hiển thị">
+                  <input
+                    className={inputClass()}
+                    value={levelForm.name}
+                    onChange={e => setLevelForm({ ...levelForm, name: e.target.value })}
+                    placeholder="vd: Beginner"
+                  />
+                </Field>
+                <Field label="Thứ tự (số nhỏ hiện trước)">
+                  <input
+                    type="number"
+                    className={inputClass()}
+                    value={levelForm.order_index}
+                    onChange={e => setLevelForm({ ...levelForm, order_index: e.target.value })}
+                  />
+                </Field>
+                <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+                  <button disabled={loading} className="rounded-xl bg-emerald-300 text-gray-950 font-bold py-3">Lưu level</button>
+                  <button type="button" onClick={() => setLevelForm(emptyLevel)} className="rounded-xl bg-white/10 px-4">Clear</button>
+                  <button type="button" onClick={() => setLevelFormOpen(false)} className="rounded-xl bg-white/10 px-4">Close</button>
+                </div>
+              </form>
+            )}
+          </section>
+          <div className="grid gap-2">
+            {levelsList.length === 0 && (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/45">Chưa có level nào.</div>
+            )}
+            {levelsList.map(item => (
+              <div key={item.code} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-3">
+                <button
+                  onClick={() => {
+                    setLevelForm({
+                      code: item.code,
+                      name: item.name || '',
+                      order_index: item.order_index ?? 0,
+                      originalCode: item.code,
+                    })
+                    setLevelFormOpen(true)
+                  }}
+                  className="flex-1 text-left"
+                >
+                  <div className="font-semibold">{item.code}</div>
+                  <div className="text-white/40 text-xs">{item.name || 'No name'} · order {item.order_index ?? 0}</div>
+                </button>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Xoá level "${item.code}"? Các từ/chủ đề/câu đang dùng sẽ bị set null.`)) {
+                      removeLevel(item.code)
+                    }
+                  }}
+                  disabled={loading}
+                  className="w-9 h-9 rounded-xl bg-red-500/10 text-red-200 flex items-center justify-center disabled:opacity-40"
+                >
+                  <Trash2 size={15} />
+                </button>
               </div>
             ))}
           </div>
@@ -933,6 +1338,36 @@ export default function AdminScreen({ profile, onBack }) {
             </div>
           ))}
           <p className="text-white/35 text-xs leading-relaxed">Xóa Auth user cần Supabase Dashboard hoặc Edge Function dùng service_role. Frontend anon key chỉ nên sửa profile, role, active.</p>
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-sm rounded-2xl border border-red-400/30 bg-gray-900 p-5 shadow-xl">
+            <h3 className="mb-1 text-lg font-bold text-white">Xác nhận xoá</h3>
+            <p className="mb-5 text-sm text-white/65">
+              Xoá vĩnh viễn <span className="font-bold text-red-300">{deleteConfirm.count}</span> {deleteConfirm.type === 'words' ? 'từ' : 'câu'}? Thao tác không thể hoàn tác.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={loading}
+                className="rounded-xl bg-white/10 py-3 font-semibold text-white disabled:opacity-50"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                onClick={deleteConfirm.type === 'words' ? executeDeleteWords : executeDeleteSentences}
+                disabled={loading}
+                className="flex items-center justify-center gap-2 rounded-xl bg-red-500 py-3 font-bold text-white disabled:opacity-50"
+              >
+                {loading ? <RefreshCw size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                Xoá {deleteConfirm.count}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
