@@ -52,10 +52,10 @@ export default function WordHeader({
             onClick={refreshMeaningFromWeb}
             disabled={meaningRefresh.loading}
             className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200 disabled:opacity-50"
-            aria-label="Tá»± tÃ¬m vÃ  cáº­p nháº­t dá»¯ liá»‡u tá»«"
+            aria-label="Tự tìm và cập nhật dữ liệu từ"
           >
             <Pencil size={10} />
-            {meaningRefresh.loading ? 'Äang cáº­p nháº­t' : 'Sá»­a nghÄ©a'}
+            {meaningRefresh.loading ? 'Đang cập nhật' : 'Sửa nghĩa'}
           </button>
         )}
         {source === 'external' && (
@@ -64,17 +64,17 @@ export default function WordHeader({
             onClick={saveWordToDb}
             disabled={saveStatus.loading || saveStatus.saved}
             className={`inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold transition-all ${saveStatus.saved ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200' : 'bg-blue-500/10 border-blue-400/25 text-blue-200 active:scale-95 disabled:opacity-50'}`}
-            aria-label="LÆ°u tá»« vÃ o tá»« Ä‘iá»ƒn cá»§a báº¡n"
+            aria-label="Lưu từ vào từ điển của bạn"
           >
             <PlusCircle size={10} />
-            {saveStatus.loading ? 'Äang lÆ°u...' : saveStatus.saved ? 'ÄÃ£ lÆ°u' : 'ThÃªm vÃ o tá»« Ä‘iá»ƒn'}
+            {saveStatus.loading ? 'Đang lưu...' : saveStatus.saved ? 'Đã lưu' : 'Thêm vào từ điển'}
           </button>
         )}
       </div>
 
       {(meaningRefresh.text || meaningRefresh.error || saveStatus.error) && (
         <div className={`mt-1 text-[11px] ${meaningRefresh.error || saveStatus.error ? 'text-red-200' : 'text-emerald-200'}`}>
-          {meaningRefresh.error || saveStatus.error || (meaningRefresh.text ? `ÄÃ£ cáº­p nháº­t: ${meaningRefresh.text}` : '')}
+          {meaningRefresh.error || saveStatus.error || (meaningRefresh.text ? `Đã cập nhật: ${meaningRefresh.text}` : '')}
         </div>
       )}
     </>

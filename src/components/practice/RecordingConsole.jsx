@@ -71,7 +71,7 @@ export default function RecordingConsole({
               className={`w-full rounded-2xl bg-emerald-500/20 border border-emerald-400/35 text-emerald-100 ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform`}
             >
               <ChevronLeft size={16} />
-              Quay láº¡i cÃ¢u Ä‘ang há»c
+              Quay lại câu đang học
             </button>
           )}
         </>

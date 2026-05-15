@@ -1,4 +1,4 @@
-﻿import React, { Suspense, lazy, useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react'
+import React, { Suspense, lazy, useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react'
 import { Mic, Volume2, Search, ChevronLeft, ChevronRight, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings, Shield, LogOut, Pencil } from 'lucide-react'
 import {
   SOUNDS, VOWEL_GROUPS, CONSONANT_GROUPS,
@@ -39,29 +39,29 @@ import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, l
 
 const AdminScreen = lazy(() => import('./AdminScreen.jsx'))
 
-// â”€â”€â”€ RACHEL'S ENGLISH LINKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── RACHEL'S ENGLISH LINKS ────────────────────────────────────────────────
 
 const RACHEL_URLS = {
-  'iË': 'https://rachelsenglish.com/english-pronounce-ee-vowel/',
-  'Éª':  'https://rachelsenglish.com/english-pronounce-ih-vowel/',
-  'É›':  'https://rachelsenglish.com/english-pronounce-eh-vowel/',
-  'Ã¦':  'https://rachelsenglish.com/english-pronounce-aa-ae-vowel/',
-  'ÊŒ':  'https://rachelsenglish.com/english-pronounce-uh-butter-vowel/',
-  'É™':  'https://rachelsenglish.com/english-pronounce-schwa/',
-  'ÉœË': 'https://rachelsenglish.com/english-pronounce-ur-vowel/',
-  'uË': 'https://rachelsenglish.com/english-pronounce-oo-vowel/',
-  'ÊŠ':  'https://rachelsenglish.com/english-pronounce-uh-push-vowel/',
-  'É”Ë': 'https://rachelsenglish.com/english-pronounce-aw-vowel/',
-  'É‘Ë': 'https://rachelsenglish.com/english-pronounce-ah-vowel/',
-  'oÊŠ': 'https://rachelsenglish.com/english-pronounce-oh-diphthong/',
-  'eÉª': 'https://rachelsenglish.com/english-pronounce-ay-diphthong/',
-  'aÉª': 'https://rachelsenglish.com/english-pronounce-ai-diphthong/',
-  'É”Éª': 'https://rachelsenglish.com/english-pronounce-oy-diphthong/',
-  'aÊŠ': 'https://rachelsenglish.com/english-pronounce-ow-diphthong/',
-  'É‘Ër':'https://rachelsenglish.com/pronounce-ar-orn-etc/',
-  'É”Ër':'https://rachelsenglish.com/pronounce-word-2/',
-  'É›É™r':'https://rachelsenglish.com/how-to-pronounce-air/',
-  'ÉªÉ™r':'https://rachelsenglish.com/vowels-ipa-pronunciation-international-phonetic-alphabet/',
+  'iː': 'https://rachelsenglish.com/english-pronounce-ee-vowel/',
+  'ɪ':  'https://rachelsenglish.com/english-pronounce-ih-vowel/',
+  'ɛ':  'https://rachelsenglish.com/english-pronounce-eh-vowel/',
+  'æ':  'https://rachelsenglish.com/english-pronounce-aa-ae-vowel/',
+  'ʌ':  'https://rachelsenglish.com/english-pronounce-uh-butter-vowel/',
+  'ə':  'https://rachelsenglish.com/english-pronounce-schwa/',
+  'ɜː': 'https://rachelsenglish.com/english-pronounce-ur-vowel/',
+  'uː': 'https://rachelsenglish.com/english-pronounce-oo-vowel/',
+  'ʊ':  'https://rachelsenglish.com/english-pronounce-uh-push-vowel/',
+  'ɔː': 'https://rachelsenglish.com/english-pronounce-aw-vowel/',
+  'ɑː': 'https://rachelsenglish.com/english-pronounce-ah-vowel/',
+  'oʊ': 'https://rachelsenglish.com/english-pronounce-oh-diphthong/',
+  'eɪ': 'https://rachelsenglish.com/english-pronounce-ay-diphthong/',
+  'aɪ': 'https://rachelsenglish.com/english-pronounce-ai-diphthong/',
+  'ɔɪ': 'https://rachelsenglish.com/english-pronounce-oy-diphthong/',
+  'aʊ': 'https://rachelsenglish.com/english-pronounce-ow-diphthong/',
+  'ɑːr':'https://rachelsenglish.com/pronounce-ar-orn-etc/',
+  'ɔːr':'https://rachelsenglish.com/pronounce-word-2/',
+  'ɛər':'https://rachelsenglish.com/how-to-pronounce-air/',
+  'ɪər':'https://rachelsenglish.com/vowels-ipa-pronunciation-international-phonetic-alphabet/',
   'p':  'https://rachelsenglish.com/english-pronounce-b-p-consonants/',
   'b':  'https://rachelsenglish.com/english-pronounce-b-p-consonants/',
   't':  'https://rachelsenglish.com/english-pronounce-t-d-consonants/',
@@ -70,23 +70,23 @@ const RACHEL_URLS = {
   'g':  'https://rachelsenglish.com/english-pronounce-g-k-consonants/',
   'm':  'https://rachelsenglish.com/english-pronounce-m-consonant/',
   'n':  'https://rachelsenglish.com/english-pronounce-n-consonant/',
-  'Å‹':  'https://rachelsenglish.com/pronounce-n-n-vs-ng-n/',
+  'ŋ':  'https://rachelsenglish.com/pronounce-n-n-vs-ng-n/',
   'f':  'https://rachelsenglish.com/english-pronounce-f-v-consonants/',
   'v':  'https://rachelsenglish.com/english-pronounce-f-v-consonants/',
-  'Î¸':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
-  'Ã°':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
+  'θ':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
+  'ð':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
   's':  'https://rachelsenglish.com/english-pronounce-s-z-consonants/',
   'z':  'https://rachelsenglish.com/english-pronounce-s-z-consonants/',
-  'Êƒ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
-  'Ê’':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
+  'ʃ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
+  'ʒ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
   'h':  'https://rachelsenglish.com/english-pronounce-h-consonant/',
   'r':  'https://rachelsenglish.com/5-tips-for-r-in-american-english/',
   'j':  'https://rachelsenglish.com/english-pronounce-y-consonant/',
   'w':  'https://rachelsenglish.com/pronounce-w-consonant/',
   'l':  'https://rachelsenglish.com/english-pronounce-l-consonant/',
-  'tÊƒ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
-  'dÊ’': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
-  'É¾':  'https://rachelsenglish.com/t-pronunciations/',
+  'tʃ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
+  'dʒ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
+  'ɾ':  'https://rachelsenglish.com/t-pronunciations/',
 }
 
 // YouTube search URL for Rachel's English for a given IPA label
@@ -94,333 +94,333 @@ function rachelYouTubeSearch(label) {
   return `https://www.youtube.com/results?search_query=rachel%27s+english+${encodeURIComponent(label)}+sound`
 }
 
-// â”€â”€â”€ PHONEME ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── PHONEME ENGINE ────────────────────────────────────────────────────────
 
 const PHONEME_INFO = {
-  'Î¸':  { tip: 'Äáº·t Ä‘áº§u lÆ°á»¡i giá»¯a hai hÃ m rÄƒng, thá»•i khÃ­ khÃ´ng rung há»ng', hard: true },
-  'Ã°':  { tip: 'LÆ°á»¡i giá»¯a rÄƒng nhÆ°ng rung há»ng (voiced)', hard: true },
-  'r':  { tip: 'Cuá»™n lÆ°á»¡i ra sau khÃ´ng cháº¡m gÃ¬, mÃ´i hÆ¡i trÃ²n', hard: true },
-  'l':  { tip: 'Äáº§u lÆ°á»¡i cháº¡m sau rÄƒng cá»­a trÃªn', hard: false },
-  'Ã¦':  { tip: 'Má»Ÿ miá»‡ng rá»™ng, kÃ©o vá» phÃ­a trÆ°á»›c â€” "cat, bad"', hard: true },
-  'Éª':  { tip: 'Ã‚m /i/ ngáº¯n â€” lÆ°á»¡i cao, miá»‡ng thÆ° giÃ£n hÆ¡n /iË/', hard: false },
-  'iË': { tip: 'Ã‚m /i/ dÃ i, kÃ©o hai gÃ³c mÃ´i sang ngang', hard: false },
-  'ÊŒ':  { tip: 'Giá»‘ng "Äƒ" Viá»‡t, miá»‡ng má»Ÿ vá»«a, lÆ°á»¡i giá»¯a-tháº¥p', hard: true },
-  'ÉœË': { tip: 'MÃ´i trÃ²n nháº¹, lÆ°á»¡i giá»¯a, cuá»™n ra sau â€” "bird, word"', hard: true },
-  'É‘Ë': { tip: 'Ã‚m "a" dÃ i, má»Ÿ miá»‡ng rá»™ng', hard: false },
-  'É”Ë': { tip: 'MÃ´i trÃ²n, miá»‡ng má»Ÿ vá»«a â€” "saw, call"', hard: false },
-  'ÊŠ':  { tip: 'Ã‚m /u/ ngáº¯n, mÃ´i trÃ²n nháº¹ â€” "book, good"', hard: true },
-  'uË': { tip: 'Ã‚m /u/ dÃ i, mÃ´i trÃ²n cÄƒng â€” "food, moon"', hard: false },
-  'É™':  { tip: 'Schwa â€” Ã¢m trung hÃ²a, miá»‡ng hoÃ n toÃ n thÆ° giÃ£n', hard: false },
-  'É™r': { tip: 'Schwa + cuá»™n lÆ°á»¡i nháº¹ (giá»ng Má»¹)', hard: false },
-  'eÉª': { tip: 'Diphthong: "e" trÆ°á»£t lÃªn "i" â€” "day, make"', hard: false },
-  'aÉª': { tip: 'Diphthong: "a" rá»™ng trÆ°á»£t lÃªn "i" â€” "night, like"', hard: false },
-  'aÉªÉ™r':{ tip: 'Diphthong + Ä‘uÃ´i r-colored â€” "fire, acquire"', hard: false },
-  'aÊŠÉ™r':{ tip: 'Diphthong + Ä‘uÃ´i r-colored â€” "hour, power"', hard: false },
-  'aÊŠ': { tip: 'Diphthong: "a" trÆ°á»£t lÃªn "u" â€” "now, out"', hard: false },
-  'oÊŠ': { tip: 'Diphthong: "o" trÆ°á»£t lÃªn "u" â€” "go, road"', hard: false },
-  'É”Éª': { tip: 'Diphthong: "oi" trong "boy, voice"', hard: false },
-  'É›É™r':{ tip: 'Diphthong: /É›/ + /É™r/ â€” "there, where"', hard: false },
-  'ÉªÉ™r':{ tip: 'Diphthong: /Éª/ + /É™r/ â€” "here, ear"', hard: false },
-  'É‘Ër':{ tip: 'Ã‚m "a" dÃ i + cuá»™n lÆ°á»¡i â€” "car, large"', hard: false },
-  'É”Ër':{ tip: 'Ã‚m "Ã´" trÃ²n + cuá»™n lÆ°á»¡i â€” "more, door"', hard: false },
-  'É¾':  { tip: 'Flap â€” /t/ hoáº·c /d/ giá»¯a nguyÃªn Ã¢m trong giá»ng Má»¹, nhÆ° "d" nhanh', hard: true },
-  'v':  { tip: 'RÄƒng cá»­a trÃªn Ä‘áº·t lÃªn mÃ´i dÆ°á»›i, rung há»ng', hard: true },
-  'w':  { tip: 'Chu mÃ´i trÃ²n nhÆ° "oa", khÃ´ng dÃ¹ng rÄƒng', hard: true },
-  'f':  { tip: 'RÄƒng trÃªn + mÃ´i dÆ°á»›i, thá»•i khÃ­ khÃ´ng rung', hard: false },
-  'Å‹':  { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m phÃ­a sau, Ã¢m mÅ©i', hard: false },
-  'Å‹k': { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m + báº­t k nháº¹ cuá»‘i', hard: false },
-  'Å‹g': { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m + g rung', hard: false },
-  'Êƒ':  { tip: 'Chu mÃ´i nháº¹, thá»•i khÃ­ â€” "sh" trong "ship"', hard: false },
-  'tÊƒ': { tip: 'Káº¿t há»£p t + Êƒ â€” "ch" trong "church"', hard: false },
-  'dÊ’': { tip: 'Káº¿t há»£p d + Ê’ â€” "j" trong "judge"', hard: false },
-  'Ê’':  { tip: 'Giá»‘ng "sh" nhÆ°ng rung há»ng â€” "s" trong "measure"', hard: true },
-  'n':  { tip: 'LÆ°á»¡i cháº¡m sau rÄƒng trÃªn, Ã¢m mÅ©i', hard: false },
-  'm':  { tip: 'KhÃ©p mÃ´i, rung mÅ©i', hard: false },
-  'p':  { tip: 'Báº­t mÃ´i, thá»•i khÃ­ (aspirated)', hard: false },
-  'b':  { tip: 'Báº­t mÃ´i, rung há»ng', hard: false },
-  't':  { tip: 'LÆ°á»¡i cháº¡m sau rÄƒng trÃªn, báº­t ra', hard: false },
-  'd':  { tip: 'LÆ°á»¡i cháº¡m sau rÄƒng, rung há»ng', hard: false },
-  'k':  { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m, báº­t ra', hard: false },
-  'g':  { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m, rung há»ng', hard: false },
-  's':  { tip: 'Äáº§u lÆ°á»¡i gáº§n rÄƒng trÃªn, thá»•i khÃ­', hard: false },
-  'z':  { tip: 'Giá»‘ng /s/ nhÆ°ng rung há»ng', hard: false },
-  'h':  { tip: 'Thá»•i khÃ­ tá»« há»ng nháº¹ nhÃ ng', hard: false },
-  'j':  { tip: 'Ã‚m "y" Ä‘áº§u â€” lÆ°á»¡i cao, miá»‡ng hÃ©', hard: false },
+  'θ':  { tip: 'Đặt đầu lưỡi giữa hai hàm răng, thổi khí không rung họng', hard: true },
+  'ð':  { tip: 'Lưỡi giữa răng nhưng rung họng (voiced)', hard: true },
+  'r':  { tip: 'Cuộn lưỡi ra sau không chạm gì, môi hơi tròn', hard: true },
+  'l':  { tip: 'Đầu lưỡi chạm sau răng cửa trên', hard: false },
+  'æ':  { tip: 'Mở miệng rộng, kéo về phía trước — "cat, bad"', hard: true },
+  'ɪ':  { tip: 'Âm /i/ ngắn — lưỡi cao, miệng thư giãn hơn /iː/', hard: false },
+  'iː': { tip: 'Âm /i/ dài, kéo hai góc môi sang ngang', hard: false },
+  'ʌ':  { tip: 'Giống "ă" Việt, miệng mở vừa, lưỡi giữa-thấp', hard: true },
+  'ɜː': { tip: 'Môi tròn nhẹ, lưỡi giữa, cuộn ra sau — "bird, word"', hard: true },
+  'ɑː': { tip: 'Âm "a" dài, mở miệng rộng', hard: false },
+  'ɔː': { tip: 'Môi tròn, miệng mở vừa — "saw, call"', hard: false },
+  'ʊ':  { tip: 'Âm /u/ ngắn, môi tròn nhẹ — "book, good"', hard: true },
+  'uː': { tip: 'Âm /u/ dài, môi tròn căng — "food, moon"', hard: false },
+  'ə':  { tip: 'Schwa — âm trung hòa, miệng hoàn toàn thư giãn', hard: false },
+  'ər': { tip: 'Schwa + cuộn lưỡi nhẹ (giọng Mỹ)', hard: false },
+  'eɪ': { tip: 'Diphthong: "e" trượt lên "i" — "day, make"', hard: false },
+  'aɪ': { tip: 'Diphthong: "a" rộng trượt lên "i" — "night, like"', hard: false },
+  'aɪər':{ tip: 'Diphthong + đuôi r-colored — "fire, acquire"', hard: false },
+  'aʊər':{ tip: 'Diphthong + đuôi r-colored — "hour, power"', hard: false },
+  'aʊ': { tip: 'Diphthong: "a" trượt lên "u" — "now, out"', hard: false },
+  'oʊ': { tip: 'Diphthong: "o" trượt lên "u" — "go, road"', hard: false },
+  'ɔɪ': { tip: 'Diphthong: "oi" trong "boy, voice"', hard: false },
+  'ɛər':{ tip: 'Diphthong: /ɛ/ + /ər/ — "there, where"', hard: false },
+  'ɪər':{ tip: 'Diphthong: /ɪ/ + /ər/ — "here, ear"', hard: false },
+  'ɑːr':{ tip: 'Âm "a" dài + cuộn lưỡi — "car, large"', hard: false },
+  'ɔːr':{ tip: 'Âm "ô" tròn + cuộn lưỡi — "more, door"', hard: false },
+  'ɾ':  { tip: 'Flap — /t/ hoặc /d/ giữa nguyên âm trong giọng Mỹ, như "d" nhanh', hard: true },
+  'v':  { tip: 'Răng cửa trên đặt lên môi dưới, rung họng', hard: true },
+  'w':  { tip: 'Chu môi tròn như "oa", không dùng răng', hard: true },
+  'f':  { tip: 'Răng trên + môi dưới, thổi khí không rung', hard: false },
+  'ŋ':  { tip: 'Lưỡi chạm vòm mềm phía sau, âm mũi', hard: false },
+  'ŋk': { tip: 'Lưỡi chạm vòm mềm + bật k nhẹ cuối', hard: false },
+  'ŋg': { tip: 'Lưỡi chạm vòm mềm + g rung', hard: false },
+  'ʃ':  { tip: 'Chu môi nhẹ, thổi khí — "sh" trong "ship"', hard: false },
+  'tʃ': { tip: 'Kết hợp t + ʃ — "ch" trong "church"', hard: false },
+  'dʒ': { tip: 'Kết hợp d + ʒ — "j" trong "judge"', hard: false },
+  'ʒ':  { tip: 'Giống "sh" nhưng rung họng — "s" trong "measure"', hard: true },
+  'n':  { tip: 'Lưỡi chạm sau răng trên, âm mũi', hard: false },
+  'm':  { tip: 'Khép môi, rung mũi', hard: false },
+  'p':  { tip: 'Bật môi, thổi khí (aspirated)', hard: false },
+  'b':  { tip: 'Bật môi, rung họng', hard: false },
+  't':  { tip: 'Lưỡi chạm sau răng trên, bật ra', hard: false },
+  'd':  { tip: 'Lưỡi chạm sau răng, rung họng', hard: false },
+  'k':  { tip: 'Lưỡi chạm vòm mềm, bật ra', hard: false },
+  'g':  { tip: 'Lưỡi chạm vòm mềm, rung họng', hard: false },
+  's':  { tip: 'Đầu lưỡi gần răng trên, thổi khí', hard: false },
+  'z':  { tip: 'Giống /s/ nhưng rung họng', hard: false },
+  'h':  { tip: 'Thổi khí từ họng nhẹ nhàng', hard: false },
+  'j':  { tip: 'Âm "y" đầu — lưỡi cao, miệng hé', hard: false },
 }
 
 const WORD_IPA_RAW = {
-  about:[['a','É™'],['b','b'],['ou','aÊŠ'],['t','t']],
-  after:[['a','Ã¦'],['f','f'],['ter','tÉ™r']],
-  again:[['a','É™'],['g','g'],['ai','eÉª'],['n','n']],
-  all:[['all','É”Ël']],
-  also:[['al','É”Ël'],['so','soÊŠ']],
-  always:[['al','É”Ël'],['ways','weÉªz']],
-  another:[['an','É™'],['oth','ÊŒÃ°'],['er','É™r']],
-  answer:[['an','Ã¦n'],['swer','sÉ™r']],
-  ask:[['a','Ã¦'],['sk','sk']],
-  back:[['b','b'],['a','Ã¦'],['ck','k']],
-  bad:[['b','b'],['a','Ã¦'],['d','d']],
-  bath:[['b','b'],['a','Ã¦'],['th','Î¸']],
-  beautiful:[['beau','bjuË'],['ti','tÉª'],['ful','fÉ™l']],
-  because:[['be','bÉª'],['cause','kÉ”Ëz']],
-  bed:[['b','b'],['e','É›'],['d','d']],
-  bird:[['b','b'],['ir','ÉœË'],['d','d']],
-  book:[['b','b'],['oo','ÊŠ'],['k','k']],
-  both:[['b','b'],['o','oÊŠ'],['th','Î¸']],
-  brother:[['br','br'],['o','ÊŒ'],['th','Ã°'],['er','É™r']],
-  but:[['b','b'],['u','ÊŒ'],['t','t']],
-  call:[['c','k'],['all','É”Ël']],
-  can:[['c','k'],['a','Ã¦'],['n','n']],
-  cat:[['c','k'],['a','Ã¦'],['t','t']],
-  careful:[['care','kÉ›É™r'],['ful','fÉ™l']],
-  chair:[['ch','tÊƒ'],['air','É›É™r']],
-  child:[['ch','tÊƒ'],['i','aÉª'],['ld','ld']],
-  city:[['ci','sÉª'],['ty','É¾i']],
-  cold:[['c','k'],['o','oÊŠ'],['ld','ld']],
-  come:[['c','k'],['ome','ÊŒm']],
-  computer:[['com','kÉ™m'],['pu','pjuË'],['ter','tÉ™r']],
-  cup:[['c','k'],['u','ÊŒ'],['p','p']],
-  day:[['d','d'],['ay','eÉª']],
-  different:[['dif','dÉªf'],['fer','fÉ™r'],['ent','É™nt']],
-  do:[['d','d'],['o','uË']],
-  dog:[['d','d'],['o','É‘Ë'],['g','g']],
-  each:[['ea','iË'],['ch','tÊƒ']],
-  earth:[['ear','ÉœË'],['th','Î¸']],
-  eat:[['ea','iË'],['t','t']],
-  enjoy:[['en','Éªn'],['joy','dÊ’É”Éª']],
-  enough:[['e','Éª'],['nough','nÊŒf']],
-  every:[['ev','É›v'],['er','É™r'],['y','i']],
-  face:[['f','f'],['a','eÉª'],['ce','s']],
-  family:[['fam','fÃ¦m'],['i','Éª'],['ly','li']],
-  father:[['fa','fÉ‘Ë'],['th','Ã°'],['er','É™r']],
-  feel:[['f','f'],['ee','iË'],['l','l']],
-  find:[['f','f'],['i','aÉª'],['nd','nd']],
-  five:[['f','f'],['ive','aÉªv']],
-  flower:[['fl','fl'],['ow','aÊŠ'],['er','É™r']],
-  food:[['f','f'],['oo','uË'],['d','d']],
-  friend:[['fr','fr'],['ie','É›'],['nd','nd']],
-  funny:[['fun','fÊŒn'],['ny','i']],
-  future:[['fu','fjuË'],['ture','tÊƒÉ™r']],
-  get:[['g','g'],['e','É›'],['t','t']],
-  giant:[['gi','dÊ’aÉª'],['ant','É™nt']],
-  girl:[['g','g'],['ir','ÉœË'],['l','l']],
-  give:[['g','g'],['ive','Éªv']],
-  good:[['g','g'],['oo','ÊŠ'],['d','d']],
-  great:[['gr','gr'],['ea','eÉª'],['t','t']],
-  hand:[['h','h'],['a','Ã¦'],['nd','nd']],
-  happy:[['hap','hÃ¦p'],['py','pi']],
-  hard:[['h','h'],['ar','É‘Ër'],['d','d']],
-  have:[['h','h'],['a','Ã¦'],['ve','v']],
-  hear:[['h','h'],['ear','ÉªÉ™r']],
-  heart:[['h','h'],['ear','É‘Ër'],['t','t']],
-  hello:[['hel','hÉ›l'],['lo','oÊŠ']],
-  help:[['h','h'],['e','É›'],['lp','lp']],
-  here:[['h','h'],['ere','ÉªÉ™r']],
-  high:[['h','h'],['igh','aÉª']],
-  hippo:[['hip','hÉªp'],['po','oÊŠ']],
-  home:[['h','h'],['ome','oÊŠm']],
-  house:[['h','h'],['ou','aÊŠ'],['se','z']],
-  how:[['h','h'],['ow','aÊŠ']],
-  important:[['im','Éªm'],['por','pÉ”Ër'],['tant','tÉ™nt']],
-  just:[['j','dÊ’'],['u','ÊŒ'],['st','st']],
-  keep:[['k','k'],['ee','iË'],['p','p']],
-  know:[['kn','n'],['ow','oÊŠ']],
-  knowledge:[['know','nÉ‘Ë'],['ledge','lÉªdÊ’']],
-  language:[['lan','lÃ¦Å‹'],['guage','gwÉªdÊ’']],
-  large:[['l','l'],['ar','É‘Ër'],['ge','dÊ’']],
-  last:[['l','l'],['a','Ã¦'],['st','st']],
-  lazy:[['la','leÉª'],['zy','zi']],
-  learn:[['l','l'],['ear','ÉœË'],['n','n']],
-  lemon:[['lem','lÉ›m'],['on','É™n']],
-  light:[['l','l'],['igh','aÉª'],['t','t']],
-  like:[['l','l'],['i','aÉª'],['ke','k']],
-  little:[['lit','lÉªt'],['tle','É™l']],
-  live:[['l','l'],['i','Éª'],['ve','v']],
-  lollipop:[['lol','lÉ‘Ël'],['li','Éª'],['pop','pÉ‘Ëp']],
-  look:[['l','l'],['oo','ÊŠ'],['k','k']],
-  loud:[['l','l'],['ou','aÊŠ'],['d','d']],
-  love:[['l','l'],['ove','ÊŒv']],
-  make:[['m','m'],['a','eÉª'],['ke','k']],
-  man:[['m','m'],['a','Ã¦'],['n','n']],
-  match:[['m','m'],['a','Ã¦'],['tch','tÊƒ']],
-  measure:[['mea','mÉ›'],['sure','Ê’É™r']],
-  moon:[['m','m'],['oo','uË'],['n','n']],
-  more:[['m','m'],['ore','É”Ër']],
-  mother:[['m','m'],['o','ÊŒ'],['th','Ã°'],['er','É™r']],
-  much:[['m','m'],['u','ÊŒ'],['ch','tÊƒ']],
-  music:[['mu','mjuË'],['sic','zÉªk']],
-  name:[['n','n'],['a','eÉª'],['me','m']],
-  nature:[['na','neÉª'],['ture','tÊƒÉ™r']],
-  near:[['n','n'],['ear','ÉªÉ™r']],
-  need:[['n','n'],['ee','iË'],['d','d']],
-  next:[['n','n'],['e','É›'],['xt','kst']],
-  nice:[['n','n'],['i','aÉª'],['ce','s']],
-  night:[['n','n'],['igh','aÉª'],['t','t']],
-  notes:[['n','n'],['otes','oÊŠts']],
-  nothing:[['no','nÊŒ'],['th','Î¸'],['ing','ÉªÅ‹']],
-  now:[['n','n'],['ow','aÊŠ']],
-  often:[['of','É”Ë'],['ten','tÉ™n']],
-  old:[['o','oÊŠ'],['ld','ld']],
-  only:[['on','oÊŠn'],['ly','li']],
-  open:[['o','oÊŠ'],['pen','pÉ™n']],
-  other:[['o','ÊŒ'],['th','Ã°'],['er','É™r']],
-  out:[['ou','aÊŠ'],['t','t']],
-  people:[['peo','piË'],['ple','pÉ™l']],
-  phone:[['ph','f'],['one','oÊŠn']],
-  photo:[['pho','foÊŠ'],['to','toÊŠ']],
-  place:[['pl','pl'],['a','eÉª'],['ce','s']],
-  please:[['pl','pl'],['ea','iË'],['se','z']],
-  problem:[['pro','prÉ‘Ë'],['blem','blÉ™m']],
-  pronunciation:[['pro','prÉ™'],['nun','nÊŒn'],['ci','sÉª'],['a','eÉª'],['tion','ÊƒÉ™n']],
-  put:[['p','p'],['u','ÊŠ'],['t','t']],
-  question:[['que','kwÉ›s'],['tion','tÊƒÉ™n']],
-  read:[['r','r'],['ea','iË'],['d','d']],
-  really:[['r','r'],['ea','iË'],['ll','l'],['y','i']],
-  red:[['r','r'],['e','É›'],['d','d']],
-  right:[['r','r'],['igh','aÉª'],['t','t']],
-  ring:[['r','r'],['ing','ÉªÅ‹']],
-  road:[['r','r'],['oa','oÊŠ'],['d','d']],
-  run:[['r','r'],['u','ÊŒ'],['n','n']],
-  same:[['s','s'],['a','eÉª'],['me','m']],
-  say:[['s','s'],['ay','eÉª']],
-  school:[['sch','sk'],['ool','uËl']],
-  she:[['sh','Êƒ'],['e','iË']],
-  should:[['sh','Êƒ'],['oul','ÊŠ'],['d','d']],
-  sister:[['sis','sÉªs'],['ter','tÉ™r']],
-  sleep:[['sl','sl'],['ee','iË'],['p','p']],
-  small:[['sm','sm'],['all','É”Ël']],
-  soft:[['s','s'],['o','É”Ë'],['ft','ft']],
-  song:[['s','s'],['ong','É”ËÅ‹']],
-  sound:[['s','s'],['ou','aÊŠ'],['nd','nd']],
-  south:[['s','s'],['ou','aÊŠ'],['th','Î¸']],
-  speak:[['sp','sp'],['ea','iË'],['k','k']],
-  start:[['st','st'],['ar','É‘Ër'],['t','t']],
-  stop:[['st','st'],['o','É‘Ë'],['p','p']],
-  story:[['sto','stÉ”Ër'],['y','i']],
-  study:[['stu','stÊŒ'],['dy','di']],
-  sweater:[['sw','sw'],['eat','É›t'],['er','É™r']],
-  table:[['ta','teÉª'],['ble','bÉ™l']],
-  take:[['t','t'],['a','eÉª'],['ke','k']],
-  teacher:[['tea','tiË'],['cher','tÊƒÉ™r']],
-  that:[['th','Ã°'],['a','Ã¦'],['t','t']],
-  the:[['th','Ã°'],['e','É™']],
-  their:[['th','Ã°'],['eir','É›É™r']],
-  them:[['th','Ã°'],['em','É›m']],
-  then:[['th','Ã°'],['en','É›n']],
-  there:[['th','Ã°'],['ere','É›É™r']],
-  these:[['th','Ã°'],['ese','iËz']],
-  they:[['th','Ã°'],['ey','eÉª']],
-  thing:[['th','Î¸'],['ing','ÉªÅ‹']],
-  think:[['th','Î¸'],['i','Éª'],['nk','Å‹k']],
-  this:[['th','Ã°'],['i','Éª'],['s','z']],
-  those:[['th','Ã°'],['ose','oÊŠz']],
-  though:[['th','Ã°'],['ough','oÊŠ']],
-  three:[['thr','Î¸r'],['ee','iË']],
-  through:[['thr','Î¸r'],['ough','uË']],
-  time:[['t','t'],['i','aÉª'],['me','m']],
-  today:[['to','tÉ™'],['day','deÉª']],
-  together:[['to','tÉ™'],['geth','gÉ›Ã°'],['er','É™r']],
-  treasure:[['trea','trÉ›'],['sure','Ê’É™r']],
-  tree:[['tr','tr'],['ee','iË']],
-  turn:[['t','t'],['ur','ÉœË'],['n','n']],
-  under:[['un','ÊŒn'],['der','dÉ™r']],
-  university:[['u','juË'],['ni','nÉª'],['ver','vÉœË'],['si','sÉª'],['ty','ti']],
-  usual:[['u','juË'],['su','Ê’u'],['al','É™l']],
-  vegetable:[['veg','vÉ›dÊ’'],['e','Éª'],['ta','tÉ™'],['ble','bÉ™l']],
-  very:[['v','v'],['er','É›r'],['y','i']],
-  vine:[['v','v'],['i','aÉª'],['ne','n']],
-  vision:[['vi','vÉª'],['sion','Ê’É™n']],
-  vital:[['vi','vaÉª'],['tal','tÉ™l']],
-  voice:[['v','v'],['oi','É”Éª'],['ce','s']],
-  want:[['w','w'],['an','É‘Ën'],['t','t']],
-  water:[['wa','wÉ”Ë'],['ter','É¾É™r']],
-  weather:[['w','w'],['ea','É›'],['th','Ã°'],['er','É™r']],
-  well:[['w','w'],['e','É›'],['ll','l']],
-  what:[['wh','w'],['a','É‘Ë'],['t','t']],
-  when:[['wh','w'],['en','É›n']],
-  where:[['wh','w'],['ere','É›É™r']],
-  which:[['wh','w'],['ich','ÉªtÊƒ']],
-  who:[['wh','h'],['o','uË']],
-  why:[['wh','w'],['y','aÉª']],
-  will:[['w','w'],['i','Éª'],['ll','l']],
-  wish:[['w','w'],['ish','ÉªÊƒ']],
-  with:[['w','w'],['i','Éª'],['th','Î¸']],
-  without:[['with','wÉªÃ°'],['out','aÊŠt']],
-  wonderful:[['won','wÊŒn'],['der','dÉ™r'],['ful','fÉ™l']],
-  word:[['w','w'],['or','ÉœË'],['d','d']],
-  world:[['w','w'],['or','ÉœË'],['l','l'],['d','d']],
-  wow:[['w','w'],['ow','aÊŠ']],
-  write:[['wr','r'],['i','aÉª'],['te','t']],
-  year:[['y','j'],['ear','ÉªÉ™r']],
-  yogurt:[['yo','joÊŠ'],['gurt','gÉ™rt']],
-  you:[['y','j'],['ou','uË']],
-  your:[['y','j'],['our','É”Ër']],
-  yummy:[['yum','jÊŒm'],['my','i']],
-  zebra:[['ze','ziË'],['bra','brÉ™']],
-  better:[['bet','bÉ›t'],['ter','É¾É™r']],
-  muddy:[['mud','mÊŒd'],['dy','i']],
+  about:[['a','ə'],['b','b'],['ou','aʊ'],['t','t']],
+  after:[['a','æ'],['f','f'],['ter','tər']],
+  again:[['a','ə'],['g','g'],['ai','eɪ'],['n','n']],
+  all:[['all','ɔːl']],
+  also:[['al','ɔːl'],['so','soʊ']],
+  always:[['al','ɔːl'],['ways','weɪz']],
+  another:[['an','ə'],['oth','ʌð'],['er','ər']],
+  answer:[['an','æn'],['swer','sər']],
+  ask:[['a','æ'],['sk','sk']],
+  back:[['b','b'],['a','æ'],['ck','k']],
+  bad:[['b','b'],['a','æ'],['d','d']],
+  bath:[['b','b'],['a','æ'],['th','θ']],
+  beautiful:[['beau','bjuː'],['ti','tɪ'],['ful','fəl']],
+  because:[['be','bɪ'],['cause','kɔːz']],
+  bed:[['b','b'],['e','ɛ'],['d','d']],
+  bird:[['b','b'],['ir','ɜː'],['d','d']],
+  book:[['b','b'],['oo','ʊ'],['k','k']],
+  both:[['b','b'],['o','oʊ'],['th','θ']],
+  brother:[['br','br'],['o','ʌ'],['th','ð'],['er','ər']],
+  but:[['b','b'],['u','ʌ'],['t','t']],
+  call:[['c','k'],['all','ɔːl']],
+  can:[['c','k'],['a','æ'],['n','n']],
+  cat:[['c','k'],['a','æ'],['t','t']],
+  careful:[['care','kɛər'],['ful','fəl']],
+  chair:[['ch','tʃ'],['air','ɛər']],
+  child:[['ch','tʃ'],['i','aɪ'],['ld','ld']],
+  city:[['ci','sɪ'],['ty','ɾi']],
+  cold:[['c','k'],['o','oʊ'],['ld','ld']],
+  come:[['c','k'],['ome','ʌm']],
+  computer:[['com','kəm'],['pu','pjuː'],['ter','tər']],
+  cup:[['c','k'],['u','ʌ'],['p','p']],
+  day:[['d','d'],['ay','eɪ']],
+  different:[['dif','dɪf'],['fer','fər'],['ent','ənt']],
+  do:[['d','d'],['o','uː']],
+  dog:[['d','d'],['o','ɑː'],['g','g']],
+  each:[['ea','iː'],['ch','tʃ']],
+  earth:[['ear','ɜː'],['th','θ']],
+  eat:[['ea','iː'],['t','t']],
+  enjoy:[['en','ɪn'],['joy','dʒɔɪ']],
+  enough:[['e','ɪ'],['nough','nʌf']],
+  every:[['ev','ɛv'],['er','ər'],['y','i']],
+  face:[['f','f'],['a','eɪ'],['ce','s']],
+  family:[['fam','fæm'],['i','ɪ'],['ly','li']],
+  father:[['fa','fɑː'],['th','ð'],['er','ər']],
+  feel:[['f','f'],['ee','iː'],['l','l']],
+  find:[['f','f'],['i','aɪ'],['nd','nd']],
+  five:[['f','f'],['ive','aɪv']],
+  flower:[['fl','fl'],['ow','aʊ'],['er','ər']],
+  food:[['f','f'],['oo','uː'],['d','d']],
+  friend:[['fr','fr'],['ie','ɛ'],['nd','nd']],
+  funny:[['fun','fʌn'],['ny','i']],
+  future:[['fu','fjuː'],['ture','tʃər']],
+  get:[['g','g'],['e','ɛ'],['t','t']],
+  giant:[['gi','dʒaɪ'],['ant','ənt']],
+  girl:[['g','g'],['ir','ɜː'],['l','l']],
+  give:[['g','g'],['ive','ɪv']],
+  good:[['g','g'],['oo','ʊ'],['d','d']],
+  great:[['gr','gr'],['ea','eɪ'],['t','t']],
+  hand:[['h','h'],['a','æ'],['nd','nd']],
+  happy:[['hap','hæp'],['py','pi']],
+  hard:[['h','h'],['ar','ɑːr'],['d','d']],
+  have:[['h','h'],['a','æ'],['ve','v']],
+  hear:[['h','h'],['ear','ɪər']],
+  heart:[['h','h'],['ear','ɑːr'],['t','t']],
+  hello:[['hel','hɛl'],['lo','oʊ']],
+  help:[['h','h'],['e','ɛ'],['lp','lp']],
+  here:[['h','h'],['ere','ɪər']],
+  high:[['h','h'],['igh','aɪ']],
+  hippo:[['hip','hɪp'],['po','oʊ']],
+  home:[['h','h'],['ome','oʊm']],
+  house:[['h','h'],['ou','aʊ'],['se','z']],
+  how:[['h','h'],['ow','aʊ']],
+  important:[['im','ɪm'],['por','pɔːr'],['tant','tənt']],
+  just:[['j','dʒ'],['u','ʌ'],['st','st']],
+  keep:[['k','k'],['ee','iː'],['p','p']],
+  know:[['kn','n'],['ow','oʊ']],
+  knowledge:[['know','nɑː'],['ledge','lɪdʒ']],
+  language:[['lan','læŋ'],['guage','gwɪdʒ']],
+  large:[['l','l'],['ar','ɑːr'],['ge','dʒ']],
+  last:[['l','l'],['a','æ'],['st','st']],
+  lazy:[['la','leɪ'],['zy','zi']],
+  learn:[['l','l'],['ear','ɜː'],['n','n']],
+  lemon:[['lem','lɛm'],['on','ən']],
+  light:[['l','l'],['igh','aɪ'],['t','t']],
+  like:[['l','l'],['i','aɪ'],['ke','k']],
+  little:[['lit','lɪt'],['tle','əl']],
+  live:[['l','l'],['i','ɪ'],['ve','v']],
+  lollipop:[['lol','lɑːl'],['li','ɪ'],['pop','pɑːp']],
+  look:[['l','l'],['oo','ʊ'],['k','k']],
+  loud:[['l','l'],['ou','aʊ'],['d','d']],
+  love:[['l','l'],['ove','ʌv']],
+  make:[['m','m'],['a','eɪ'],['ke','k']],
+  man:[['m','m'],['a','æ'],['n','n']],
+  match:[['m','m'],['a','æ'],['tch','tʃ']],
+  measure:[['mea','mɛ'],['sure','ʒər']],
+  moon:[['m','m'],['oo','uː'],['n','n']],
+  more:[['m','m'],['ore','ɔːr']],
+  mother:[['m','m'],['o','ʌ'],['th','ð'],['er','ər']],
+  much:[['m','m'],['u','ʌ'],['ch','tʃ']],
+  music:[['mu','mjuː'],['sic','zɪk']],
+  name:[['n','n'],['a','eɪ'],['me','m']],
+  nature:[['na','neɪ'],['ture','tʃər']],
+  near:[['n','n'],['ear','ɪər']],
+  need:[['n','n'],['ee','iː'],['d','d']],
+  next:[['n','n'],['e','ɛ'],['xt','kst']],
+  nice:[['n','n'],['i','aɪ'],['ce','s']],
+  night:[['n','n'],['igh','aɪ'],['t','t']],
+  notes:[['n','n'],['otes','oʊts']],
+  nothing:[['no','nʌ'],['th','θ'],['ing','ɪŋ']],
+  now:[['n','n'],['ow','aʊ']],
+  often:[['of','ɔː'],['ten','tən']],
+  old:[['o','oʊ'],['ld','ld']],
+  only:[['on','oʊn'],['ly','li']],
+  open:[['o','oʊ'],['pen','pən']],
+  other:[['o','ʌ'],['th','ð'],['er','ər']],
+  out:[['ou','aʊ'],['t','t']],
+  people:[['peo','piː'],['ple','pəl']],
+  phone:[['ph','f'],['one','oʊn']],
+  photo:[['pho','foʊ'],['to','toʊ']],
+  place:[['pl','pl'],['a','eɪ'],['ce','s']],
+  please:[['pl','pl'],['ea','iː'],['se','z']],
+  problem:[['pro','prɑː'],['blem','bləm']],
+  pronunciation:[['pro','prə'],['nun','nʌn'],['ci','sɪ'],['a','eɪ'],['tion','ʃən']],
+  put:[['p','p'],['u','ʊ'],['t','t']],
+  question:[['que','kwɛs'],['tion','tʃən']],
+  read:[['r','r'],['ea','iː'],['d','d']],
+  really:[['r','r'],['ea','iː'],['ll','l'],['y','i']],
+  red:[['r','r'],['e','ɛ'],['d','d']],
+  right:[['r','r'],['igh','aɪ'],['t','t']],
+  ring:[['r','r'],['ing','ɪŋ']],
+  road:[['r','r'],['oa','oʊ'],['d','d']],
+  run:[['r','r'],['u','ʌ'],['n','n']],
+  same:[['s','s'],['a','eɪ'],['me','m']],
+  say:[['s','s'],['ay','eɪ']],
+  school:[['sch','sk'],['ool','uːl']],
+  she:[['sh','ʃ'],['e','iː']],
+  should:[['sh','ʃ'],['oul','ʊ'],['d','d']],
+  sister:[['sis','sɪs'],['ter','tər']],
+  sleep:[['sl','sl'],['ee','iː'],['p','p']],
+  small:[['sm','sm'],['all','ɔːl']],
+  soft:[['s','s'],['o','ɔː'],['ft','ft']],
+  song:[['s','s'],['ong','ɔːŋ']],
+  sound:[['s','s'],['ou','aʊ'],['nd','nd']],
+  south:[['s','s'],['ou','aʊ'],['th','θ']],
+  speak:[['sp','sp'],['ea','iː'],['k','k']],
+  start:[['st','st'],['ar','ɑːr'],['t','t']],
+  stop:[['st','st'],['o','ɑː'],['p','p']],
+  story:[['sto','stɔːr'],['y','i']],
+  study:[['stu','stʌ'],['dy','di']],
+  sweater:[['sw','sw'],['eat','ɛt'],['er','ər']],
+  table:[['ta','teɪ'],['ble','bəl']],
+  take:[['t','t'],['a','eɪ'],['ke','k']],
+  teacher:[['tea','tiː'],['cher','tʃər']],
+  that:[['th','ð'],['a','æ'],['t','t']],
+  the:[['th','ð'],['e','ə']],
+  their:[['th','ð'],['eir','ɛər']],
+  them:[['th','ð'],['em','ɛm']],
+  then:[['th','ð'],['en','ɛn']],
+  there:[['th','ð'],['ere','ɛər']],
+  these:[['th','ð'],['ese','iːz']],
+  they:[['th','ð'],['ey','eɪ']],
+  thing:[['th','θ'],['ing','ɪŋ']],
+  think:[['th','θ'],['i','ɪ'],['nk','ŋk']],
+  this:[['th','ð'],['i','ɪ'],['s','z']],
+  those:[['th','ð'],['ose','oʊz']],
+  though:[['th','ð'],['ough','oʊ']],
+  three:[['thr','θr'],['ee','iː']],
+  through:[['thr','θr'],['ough','uː']],
+  time:[['t','t'],['i','aɪ'],['me','m']],
+  today:[['to','tə'],['day','deɪ']],
+  together:[['to','tə'],['geth','gɛð'],['er','ər']],
+  treasure:[['trea','trɛ'],['sure','ʒər']],
+  tree:[['tr','tr'],['ee','iː']],
+  turn:[['t','t'],['ur','ɜː'],['n','n']],
+  under:[['un','ʌn'],['der','dər']],
+  university:[['u','juː'],['ni','nɪ'],['ver','vɜː'],['si','sɪ'],['ty','ti']],
+  usual:[['u','juː'],['su','ʒu'],['al','əl']],
+  vegetable:[['veg','vɛdʒ'],['e','ɪ'],['ta','tə'],['ble','bəl']],
+  very:[['v','v'],['er','ɛr'],['y','i']],
+  vine:[['v','v'],['i','aɪ'],['ne','n']],
+  vision:[['vi','vɪ'],['sion','ʒən']],
+  vital:[['vi','vaɪ'],['tal','təl']],
+  voice:[['v','v'],['oi','ɔɪ'],['ce','s']],
+  want:[['w','w'],['an','ɑːn'],['t','t']],
+  water:[['wa','wɔː'],['ter','ɾər']],
+  weather:[['w','w'],['ea','ɛ'],['th','ð'],['er','ər']],
+  well:[['w','w'],['e','ɛ'],['ll','l']],
+  what:[['wh','w'],['a','ɑː'],['t','t']],
+  when:[['wh','w'],['en','ɛn']],
+  where:[['wh','w'],['ere','ɛər']],
+  which:[['wh','w'],['ich','ɪtʃ']],
+  who:[['wh','h'],['o','uː']],
+  why:[['wh','w'],['y','aɪ']],
+  will:[['w','w'],['i','ɪ'],['ll','l']],
+  wish:[['w','w'],['ish','ɪʃ']],
+  with:[['w','w'],['i','ɪ'],['th','θ']],
+  without:[['with','wɪð'],['out','aʊt']],
+  wonderful:[['won','wʌn'],['der','dər'],['ful','fəl']],
+  word:[['w','w'],['or','ɜː'],['d','d']],
+  world:[['w','w'],['or','ɜː'],['l','l'],['d','d']],
+  wow:[['w','w'],['ow','aʊ']],
+  write:[['wr','r'],['i','aɪ'],['te','t']],
+  year:[['y','j'],['ear','ɪər']],
+  yogurt:[['yo','joʊ'],['gurt','gərt']],
+  you:[['y','j'],['ou','uː']],
+  your:[['y','j'],['our','ɔːr']],
+  yummy:[['yum','jʌm'],['my','i']],
+  zebra:[['ze','ziː'],['bra','brə']],
+  better:[['bet','bɛt'],['ter','ɾər']],
+  muddy:[['mud','mʌd'],['dy','i']],
   // words in SOUNDS data not previously covered
-  bee:[['b','b'],['ee','iË']],
-  feet:[['f','f'],['ee','iË'],['t','t']],
-  fish:[['f','f'],['i','Éª'],['sh','Êƒ']],
-  sit:[['s','s'],['i','Éª'],['t','t']],
-  bit:[['b','b'],['i','Éª'],['t','t']],
-  quick:[['qu','kw'],['i','Éª'],['ck','k']],
-  egg:[['e','É›'],['gg','g']],
-  bag:[['b','b'],['a','Ã¦'],['g','g']],
-  black:[['bl','bl'],['a','Ã¦'],['ck','k']],
-  bus:[['b','b'],['u','ÊŒ'],['s','s']],
-  duck:[['d','d'],['u','ÊŒ'],['ck','k']],
-  banana:[['ba','bÉ™'],['na','nÃ¦'],['na','nÉ™']],
-  blue:[['bl','bl'],['ue','uË']],
-  ball:[['b','b'],['all','É”Ël']],
-  hot:[['h','h'],['o','É‘Ë'],['t','t']],
-  clock:[['cl','kl'],['o','É‘Ë'],['ck','k']],
-  dollar:[['d','d'],['o','É‘Ë'],['ll','l'],['ar','É™r']],
-  go:[['g','g'],['o','oÊŠ']],
-  bike:[['b','b'],['i','aÉª'],['ke','k']],
-  boy:[['b','b'],['oy','É”Éª']],
-  oil:[['oi','É”Éª'],['l','l']],
-  car:[['c','k'],['ar','É‘Ër']],
-  door:[['d','d'],['oor','É”Ër']],
-  pretty:[['pr','pr'],['ett','Éªt'],['y','i']],
-  plant:[['pl','pl'],['a','Ã¦'],['nt','nt']],
-  baby:[['ba','beÉª'],['by','bi']],
-  big:[['b','b'],['i','Éª'],['g','g']],
-  tiny:[['ti','taÉª'],['ny','ni']],
-  turtle:[['tur','tÉœË'],['tle','tÉ™l']],
-  dinner:[['din','dÉªn'],['ner','nÉ™r']],
-  date:[['d','d'],['a','eÉª'],['te','t']],
-  deep:[['d','d'],['ee','iË'],['p','p']],
-  candy:[['can','kÃ¦n'],['dy','di']],
-  cane:[['c','k'],['a','eÉª'],['ne','n']],
-  kind:[['k','k'],['i','aÉª'],['nd','nd']],
-  giggly:[['gig','gÉªg'],['gly','li']],
-  meek:[['m','m'],['ee','iË'],['k','k']],
-  mouse:[['m','m'],['ou','aÊŠ'],['se','s']],
-  new:[['n','n'],['ew','juË']],
-  necklace:[['neck','nÉ›k'],['lace','lÉªs']],
-  furry:[['fur','fÉœË'],['ry','ri']],
-  nose:[['n','n'],['o','oÊŠ'],['se','z']],
-  shiny:[['sh','Êƒ'],['i','aÉª'],['ny','ni']],
-  shoes:[['sh','Êƒ'],['oes','uËz']],
-  prickly:[['pr','pr'],['i','Éª'],['ck','k'],['ly','li']],
-  branch:[['br','br'],['a','Ã¦'],['n','n'],['ch','tÊƒ']],
-  whale:[['wh','w'],['a','eÉª'],['le','l']],
-  cheddar:[['ch','tÊƒ'],['e','É›'],['dd','d'],['ar','É™r']],
-  cheese:[['ch','tÊƒ'],['ee','iË'],['se','z']],
-  church:[['ch','tÊƒ'],['ur','ÉœË'],['ch','tÊƒ']],
-  gentle:[['gen','dÊ’É›n'],['tle','tÉ™l']],
-  city_tap:[['ci','sÉª'],['ty','É¾i']],
-  butter:[['but','bÊŒt'],['ter','É¾É™r']],
-  before:[['be','bÉª'],['fore','fÉ”Ër']],
-  breathe:[['br','br'],['eathe','iËÃ°']],
-  morning:[['mor','mÉ”Ër'],['ning','nÉªÅ‹']],
-  learning:[['learn','lÉœËrn'],['ing','ÉªÅ‹']],
+  bee:[['b','b'],['ee','iː']],
+  feet:[['f','f'],['ee','iː'],['t','t']],
+  fish:[['f','f'],['i','ɪ'],['sh','ʃ']],
+  sit:[['s','s'],['i','ɪ'],['t','t']],
+  bit:[['b','b'],['i','ɪ'],['t','t']],
+  quick:[['qu','kw'],['i','ɪ'],['ck','k']],
+  egg:[['e','ɛ'],['gg','g']],
+  bag:[['b','b'],['a','æ'],['g','g']],
+  black:[['bl','bl'],['a','æ'],['ck','k']],
+  bus:[['b','b'],['u','ʌ'],['s','s']],
+  duck:[['d','d'],['u','ʌ'],['ck','k']],
+  banana:[['ba','bə'],['na','næ'],['na','nə']],
+  blue:[['bl','bl'],['ue','uː']],
+  ball:[['b','b'],['all','ɔːl']],
+  hot:[['h','h'],['o','ɑː'],['t','t']],
+  clock:[['cl','kl'],['o','ɑː'],['ck','k']],
+  dollar:[['d','d'],['o','ɑː'],['ll','l'],['ar','ər']],
+  go:[['g','g'],['o','oʊ']],
+  bike:[['b','b'],['i','aɪ'],['ke','k']],
+  boy:[['b','b'],['oy','ɔɪ']],
+  oil:[['oi','ɔɪ'],['l','l']],
+  car:[['c','k'],['ar','ɑːr']],
+  door:[['d','d'],['oor','ɔːr']],
+  pretty:[['pr','pr'],['ett','ɪt'],['y','i']],
+  plant:[['pl','pl'],['a','æ'],['nt','nt']],
+  baby:[['ba','beɪ'],['by','bi']],
+  big:[['b','b'],['i','ɪ'],['g','g']],
+  tiny:[['ti','taɪ'],['ny','ni']],
+  turtle:[['tur','tɜː'],['tle','təl']],
+  dinner:[['din','dɪn'],['ner','nər']],
+  date:[['d','d'],['a','eɪ'],['te','t']],
+  deep:[['d','d'],['ee','iː'],['p','p']],
+  candy:[['can','kæn'],['dy','di']],
+  cane:[['c','k'],['a','eɪ'],['ne','n']],
+  kind:[['k','k'],['i','aɪ'],['nd','nd']],
+  giggly:[['gig','gɪg'],['gly','li']],
+  meek:[['m','m'],['ee','iː'],['k','k']],
+  mouse:[['m','m'],['ou','aʊ'],['se','s']],
+  new:[['n','n'],['ew','juː']],
+  necklace:[['neck','nɛk'],['lace','lɪs']],
+  furry:[['fur','fɜː'],['ry','ri']],
+  nose:[['n','n'],['o','oʊ'],['se','z']],
+  shiny:[['sh','ʃ'],['i','aɪ'],['ny','ni']],
+  shoes:[['sh','ʃ'],['oes','uːz']],
+  prickly:[['pr','pr'],['i','ɪ'],['ck','k'],['ly','li']],
+  branch:[['br','br'],['a','æ'],['n','n'],['ch','tʃ']],
+  whale:[['wh','w'],['a','eɪ'],['le','l']],
+  cheddar:[['ch','tʃ'],['e','ɛ'],['dd','d'],['ar','ər']],
+  cheese:[['ch','tʃ'],['ee','iː'],['se','z']],
+  church:[['ch','tʃ'],['ur','ɜː'],['ch','tʃ']],
+  gentle:[['gen','dʒɛn'],['tle','təl']],
+  city_tap:[['ci','sɪ'],['ty','ɾi']],
+  butter:[['but','bʌt'],['ter','ɾər']],
+  before:[['be','bɪ'],['fore','fɔːr']],
+  breathe:[['br','br'],['eathe','iːð']],
+  morning:[['mor','mɔːr'],['ning','nɪŋ']],
+  learning:[['learn','lɜːrn'],['ing','ɪŋ']],
 }
 
 // Primary stress index (0-based) by vowel nucleus / stressed syllable.
-// Only multi-syllable words are listed; single-syllable words need no Ëˆ mark.
+// Only multi-syllable words are listed; single-syllable words need no ˈ mark.
 const WORD_STRESS_IDX = {
   // stress on 2nd group
   about: 1, again: 1, another: 1, banana: 1, because: 1, before: 1,
@@ -444,10 +444,10 @@ const WORD_STRESS_IDX = {
 }
 
 const STRESS_VOWEL_MARKERS = [
-  'É›É™r', 'ÉªÉ™r', 'É‘Ër', 'É”Ër', 'É™r',
-  'iË', 'ÉœË', 'uË', 'É”Ë', 'É‘Ë',
-  'oÊŠ', 'eÉª', 'aÉª', 'aÊŠ', 'É”Éª',
-  'É™', 'Éª', 'É›', 'Ã¦', 'ÊŒ', 'ÊŠ',
+  'ɛər', 'ɪər', 'ɑːr', 'ɔːr', 'ər',
+  'iː', 'ɜː', 'uː', 'ɔː', 'ɑː',
+  'oʊ', 'eɪ', 'aɪ', 'aʊ', 'ɔɪ',
+  'ə', 'ɪ', 'ɛ', 'æ', 'ʌ', 'ʊ',
 ]
 
 function hasStressBearingVowel(ipa) {
@@ -458,11 +458,11 @@ function unsupportedWord(word) {
   return [{
     text: word,
     ipa: '?',
-    tip: 'Tá»« nÃ y chÆ°a cÃ³ IPA Ä‘Ã¡ng tin trong tá»« Ä‘iá»ƒn English hiá»‡n táº¡i',
+    tip: 'Từ này chưa có IPA đáng tin trong từ điển English hiện tại',
     isHard: false,
     isStressed: false,
     canScore: false,
-    lookupNote: 'ChÆ°a há»— trá»£ tá»« nÃ y trong English dictionary. App sáº½ chá»‰ cháº¥m nhá»¯ng tá»« cÃ³ IPA Ä‘Ã£ Ä‘Æ°á»£c kiá»ƒm chá»©ng.',
+    lookupNote: 'Chưa hỗ trợ từ này trong English dictionary. App sẽ chỉ chấm những từ có IPA đã được kiểm chứng.',
   }]
 }
 
@@ -471,7 +471,7 @@ function normalizeWordEntry(raw, stressIdx = -1) {
   return raw.map(([text, ipa], i) => ({
     ...(hasStressBearingVowel(ipa) ? { __vowelIdx: ++vowelIdx } : { __vowelIdx: null }),
     text, ipa,
-    tip: PHONEME_INFO[ipa]?.tip || `Ã‚m /${ipa}/`,
+    tip: PHONEME_INFO[ipa]?.tip || `Âm /${ipa}/`,
     isHard: PHONEME_INFO[ipa]?.hard || false,
     isStressed: hasStressBearingVowel(ipa) && vowelIdx === stressIdx,
     canScore: true,
@@ -482,10 +482,10 @@ function normalizeWordEntry(raw, stressIdx = -1) {
 const EXTERNAL_DICT_CACHE = new Map()
 
 const EN_FALLBACK_IPA_OVERRIDES = {
-  commitment: '/kÉ™ËˆmÉªtmÉ™nt/',
-  committee: '/kÉ™ËˆmÉªti/',
-  competitor: '/kÉ™mËˆpetÉ™tÉ™r/',
-  complex: '/kÉ™mËˆpleks/',
+  commitment: '/kəˈmɪtmənt/',
+  committee: '/kəˈmɪti/',
+  competitor: '/kəmˈpetətər/',
+  complex: '/kəmˈpleks/',
 }
 
 function stripIpaDecorators(ipa) {
@@ -494,44 +494,44 @@ function stripIpaDecorators(ipa) {
     .replace(/^\[|\]$/g, '')
     .replace(/[()]/g, '')
     .replace(/\./g, '')
-    .replace(/ËŒ/g, '')
+    .replace(/ˌ/g, '')
     .trim()
 }
 
 function normalizeExternalIpa(ipa) {
   return stripIpaDecorators(ipa)
     .normalize('NFC')
-    .replace(/Ë/g, 'Ë')
-    .replace(/Ë‘/g, 'Ë')
-    .replace(/lÌ©/g, 'É™l')
-    .replace(/mÌ©/g, 'É™m')
-    .replace(/nÌ©/g, 'É™n')
-    .replace(/É¹/g, 'r')
-    .replace(/É¡/g, 'g')
-    .replace(/Éš/g, 'É™r')
-    .replace(/É/g, 'ÉœË')
-    .replace(/Éœr/g, 'ÉœËr')
-    .replace(/É«/g, 'l')
-    .replace(/áµ»/g, 'Éª')
-    .replace(/áµ¿/g, 'ÊŠ')
-    .replace(/Ê”/g, 't')
-    .replace(/É™ÊŠ/g, 'oÊŠ')
-    .replace(/É™u/g, 'oÊŠ')
-    .replace(/oË/g, 'oÊŠ')
-    .replace(/É”ËÉ¹/g, 'É”Ër')
-    .replace(/É‘ËÉ¹/g, 'É‘Ër')
-    .replace(/ÉœËÉ¹/g, 'ÉœËr')
-    .replace(/eÉ™/g, 'É›É™r')
-    .replace(/ÉªÉ™/g, 'ÉªÉ™r')
-    .replace(/ÊŠÉ™/g, 'É”Ër')
-    .replace(/aÉ™/g, 'aÉªÉ™r')
+    .replace(/ː/g, 'ː')
+    .replace(/ˑ/g, 'ː')
+    .replace(/l̩/g, 'əl')
+    .replace(/m̩/g, 'əm')
+    .replace(/n̩/g, 'ən')
+    .replace(/ɹ/g, 'r')
+    .replace(/ɡ/g, 'g')
+    .replace(/ɚ/g, 'ər')
+    .replace(/ɝ/g, 'ɜː')
+    .replace(/ɜr/g, 'ɜːr')
+    .replace(/ɫ/g, 'l')
+    .replace(/ᵻ/g, 'ɪ')
+    .replace(/ᵿ/g, 'ʊ')
+    .replace(/ʔ/g, 't')
+    .replace(/əʊ/g, 'oʊ')
+    .replace(/əu/g, 'oʊ')
+    .replace(/oː/g, 'oʊ')
+    .replace(/ɔːɹ/g, 'ɔːr')
+    .replace(/ɑːɹ/g, 'ɑːr')
+    .replace(/ɜːɹ/g, 'ɜːr')
+    .replace(/eə/g, 'ɛər')
+    .replace(/ɪə/g, 'ɪər')
+    .replace(/ʊə/g, 'ɔːr')
+    .replace(/aə/g, 'aɪər')
 }
 
 const EXTERNAL_IPA_ATOMS = [
-  'aÉªÉ™r', 'aÊŠÉ™r', 'tÊƒ', 'dÊ’', 'iË', 'ÉœË', 'uË', 'É”Ë', 'É‘Ë', 'oÊŠ', 'eÉª', 'aÉª', 'aÊŠ', 'É”Éª',
-  'É›É™r', 'ÉªÉ™r', 'É‘Ër', 'É”Ër', 'ÉœËr', 'É™r', 'juË', 'kw', 'ks',
-  'Å‹k', 'Å‹g', 'Î¸', 'Ã°', 'Êƒ', 'Ê’', 'Å‹',
-  'É™', 'Éª', 'É›', 'Ã¦', 'ÊŒ', 'ÊŠ', 'i', 'É‘', 'É’', 'É”', 'e', 'a', 'Éœ', 'É', 'É¾',
+  'aɪər', 'aʊər', 'tʃ', 'dʒ', 'iː', 'ɜː', 'uː', 'ɔː', 'ɑː', 'oʊ', 'eɪ', 'aɪ', 'aʊ', 'ɔɪ',
+  'ɛər', 'ɪər', 'ɑːr', 'ɔːr', 'ɜːr', 'ər', 'juː', 'kw', 'ks',
+  'ŋk', 'ŋg', 'θ', 'ð', 'ʃ', 'ʒ', 'ŋ',
+  'ə', 'ɪ', 'ɛ', 'æ', 'ʌ', 'ʊ', 'i', 'ɑ', 'ɒ', 'ɔ', 'e', 'a', 'ɜ', 'ɐ', 'ɾ',
   'p', 'b', 't', 'd', 'k', 'g', 'm', 'n', 'f', 'v', 's', 'z', 'h', 'r', 'j', 'w', 'l',
 ]
 
@@ -545,7 +545,7 @@ function tokenizeExternalIpa(rawIpa) {
 
   while (i < ipa.length) {
     const ch = ipa[i]
-    if (ch === 'Ëˆ') {
+    if (ch === 'ˈ') {
       stressNext = true
       i++
       continue
@@ -615,7 +615,7 @@ function buildExternalWordEntry(word, rawIpa) {
   return tokens.map((token, index) => ({
     text: chunks[index] || '',
     ipa: token.ipa,
-    tip: PHONEME_INFO[token.ipa]?.tip || `Ã‚m /${token.ipa}/`,
+    tip: PHONEME_INFO[token.ipa]?.tip || `Âm /${token.ipa}/`,
     isHard: PHONEME_INFO[token.ipa]?.hard || false,
     isStressed: token.isStressed,
     canScore: true,
@@ -719,54 +719,54 @@ function g2p(word) {
     const try2 = (pat, ipa) => {
       if (rest.startsWith(pat)) { out.push({ text: pat, ipa }); i += pat.length; found = true }
     }
-    if (!found) try2('tch', 'tÊƒ')
-    if (!found) try2('dge', 'dÊ’')
-    if (!found) try2('igh', 'aÉª')
+    if (!found) try2('tch', 'tʃ')
+    if (!found) try2('dge', 'dʒ')
+    if (!found) try2('igh', 'aɪ')
     if (!found) try2('ght', 't')
-    if (!found && rest.startsWith('tion')) { out.push({ text: 'tion', ipa: 'ÊƒÉ™n' }); i += 4; found = true }
-    if (!found && rest.startsWith('sion')) { out.push({ text: 'sion', ipa: 'Ê’É™n' }); i += 4; found = true }
-    if (!found && rest.startsWith('ture')) { out.push({ text: 'ture', ipa: 'tÊƒÉ™r' }); i += 4; found = true }
-    if (!found && rest.startsWith('th')) { out.push({ text: 'th', ipa: (isVoicedThWord || i > 0) ? 'Ã°' : 'Î¸' }); i += 2; found = true }
-    if (!found) try2('sh', 'Êƒ')
-    if (!found) try2('ch', 'tÊƒ')
+    if (!found && rest.startsWith('tion')) { out.push({ text: 'tion', ipa: 'ʃən' }); i += 4; found = true }
+    if (!found && rest.startsWith('sion')) { out.push({ text: 'sion', ipa: 'ʒən' }); i += 4; found = true }
+    if (!found && rest.startsWith('ture')) { out.push({ text: 'ture', ipa: 'tʃər' }); i += 4; found = true }
+    if (!found && rest.startsWith('th')) { out.push({ text: 'th', ipa: (isVoicedThWord || i > 0) ? 'ð' : 'θ' }); i += 2; found = true }
+    if (!found) try2('sh', 'ʃ')
+    if (!found) try2('ch', 'tʃ')
     if (!found) try2('ph', 'f')
     if (!found && rest.startsWith('wh')) { out.push({ text: 'wh', ipa: next === 'o' ? 'h' : 'w' }); i += 2; found = true }
     if (!found) try2('ck', 'k')
-    if (!found && rest.startsWith('ng')) { out.push({ text: 'ng', ipa: 'aeiou'.includes(w[i + 2] || '') ? 'Å‹g' : 'Å‹' }); i += 2; found = true }
+    if (!found && rest.startsWith('ng')) { out.push({ text: 'ng', ipa: 'aeiou'.includes(w[i + 2] || '') ? 'ŋg' : 'ŋ' }); i += 2; found = true }
     if (!found) try2('qu', 'kw')
     if (!found) try2('kn', 'n')
     if (!found) try2('wr', 'r')
     if (!found && rest.startsWith('mb') && i === w.length - 2) { out.push({ text: 'mb', ipa: 'm' }); i += 2; found = true }
-    if (!found) try2('ee', 'iË')
-    if (!found) try2('ea', 'iË')
-    if (!found) try2('ai', 'eÉª')
-    if (!found) try2('ay', 'eÉª')
-    if (!found) try2('oa', 'oÊŠ')
-    if (!found) try2('oi', 'É”Éª')
-    if (!found) try2('oy', 'É”Éª')
-    if (!found) try2('oo', 'uË')
-    if (!found) try2('ou', 'aÊŠ')
-    if (!found) try2('ow', 'aÊŠ')
-    if (!found) try2('ew', 'juË')
-    if (!found) try2('ue', 'uË')
-    if (!found) try2('au', 'É”Ë')
-    if (!found) try2('aw', 'É”Ë')
-    if (!found) try2('er', 'É™r')
-    if (!found) try2('ir', 'ÉœË')
-    if (!found) try2('ur', 'ÉœË')
-    if (!found) try2('or', 'É”Ër')
-    if (!found) try2('ar', 'É‘Ër')
+    if (!found) try2('ee', 'iː')
+    if (!found) try2('ea', 'iː')
+    if (!found) try2('ai', 'eɪ')
+    if (!found) try2('ay', 'eɪ')
+    if (!found) try2('oa', 'oʊ')
+    if (!found) try2('oi', 'ɔɪ')
+    if (!found) try2('oy', 'ɔɪ')
+    if (!found) try2('oo', 'uː')
+    if (!found) try2('ou', 'aʊ')
+    if (!found) try2('ow', 'aʊ')
+    if (!found) try2('ew', 'juː')
+    if (!found) try2('ue', 'uː')
+    if (!found) try2('au', 'ɔː')
+    if (!found) try2('aw', 'ɔː')
+    if (!found) try2('er', 'ər')
+    if (!found) try2('ir', 'ɜː')
+    if (!found) try2('ur', 'ɜː')
+    if (!found) try2('or', 'ɔːr')
+    if (!found) try2('ar', 'ɑːr')
     if (!found) {
       const c = w[i]
       let ipa = c
-      if (c === 'a') ipa = 'Ã¦'
-      else if (c === 'e') ipa = i === w.length - 1 ? null : 'É›'
-      else if (c === 'i') ipa = 'Éª'
-      else if (c === 'o') ipa = 'É‘Ë'
-      else if (c === 'u') ipa = 'ÊŒ'
+      if (c === 'a') ipa = 'æ'
+      else if (c === 'e') ipa = i === w.length - 1 ? null : 'ɛ'
+      else if (c === 'i') ipa = 'ɪ'
+      else if (c === 'o') ipa = 'ɑː'
+      else if (c === 'u') ipa = 'ʌ'
       else if (c === 'y') ipa = i === 0 ? 'j' : 'i'
       else if (c === 'c') ipa = 'eiy'.includes(next) ? 's' : 'k'
-      else if (c === 'g') ipa = 'eiy'.includes(next) ? 'dÊ’' : 'g'
+      else if (c === 'g') ipa = 'eiy'.includes(next) ? 'dʒ' : 'g'
       else if (c === 's') ipa = 'aeiou'.includes(prev) && 'aeiou'.includes(next) ? 'z' : 's'
       else if (c === 'x') ipa = 'ks'
       else if (c === 'z') ipa = 'z'
@@ -775,14 +775,14 @@ function g2p(word) {
     }
   }
   return out
-    .filter(p => p.ipa && p.ipa !== 'âˆ…')
+    .filter(p => p.ipa && p.ipa !== '∅')
     .map(p => ({
       ...p,
-      tip: PHONEME_INFO[p.ipa]?.tip || `Ã‚m /${p.ipa}/`,
+      tip: PHONEME_INFO[p.ipa]?.tip || `Âm /${p.ipa}/`,
       isHard: PHONEME_INFO[p.ipa]?.hard || false,
       isStressed: false,
       canScore: false,
-      lookupNote: 'IPA nÃ y Ä‘Æ°á»£c Ä‘oÃ¡n theo rule, khÃ´ng Ä‘á»§ tin cáº­y Ä‘á»ƒ cháº¥m Ä‘iá»ƒm English dictionary.',
+      lookupNote: 'IPA này được đoán theo rule, không đủ tin cậy để chấm điểm English dictionary.',
     }))
 }
 
@@ -801,9 +801,9 @@ function buildPhonemes(pairs, infoMap) {
     .filter(p => p.ipa)
 }
 
-// â”€â”€â”€ AUDIO HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── AUDIO HELPERS ────────────────────────────────────────────────────────
 
-// â”€â”€â”€ UI HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── UI HELPERS ───────────────────────────────────────────────────────────
 
 
 const GOOGLE_SOURCE_LANGUAGE = {
@@ -820,12 +820,12 @@ function googleTranslateApiUrl(text, language = 'english') {
 
 async function fetchVietnameseTranslation(text, language = 'english') {
   const resp = await fetch(googleTranslateApiUrl(text, language))
-  if (!resp.ok) throw new Error('KhÃ´ng dá»‹ch tá»± Ä‘á»™ng Ä‘Æ°á»£c.')
+  if (!resp.ok) throw new Error('Không dịch tự động được.')
   const data = await resp.json()
   const translated = Array.isArray(data?.[0])
     ? data[0].map(part => part?.[0]).filter(Boolean).join('')
     : ''
-  if (!translated) throw new Error('KhÃ´ng cÃ³ káº¿t quáº£ dá»‹ch.')
+  if (!translated) throw new Error('Không có kết quả dịch.')
   return translated
 }
 
@@ -1091,16 +1091,16 @@ function looksLikeIpaForScoring(raw, language = 'english') {
   const value = String(raw || '').trim()
   if (!value) return false
   if (normalizeLanguage(language) !== 'english') return true
-  return /[É™ÉªÉ›Ã¦ÊŒÊŠÉ‘É’É”ÉœÎ¸Ã°ÊƒÊ’Å‹ËˆË]/.test(value) || value.includes('Â´') || value.includes('â€™') || value.includes('Ð·')
+  return /[əɪɛæʌʊɑɒɔɜθðʃʒŋˈː]/.test(value) || value.includes('´') || value.includes('’') || value.includes('з')
 }
 
 function normalizeSupabaseIpa(raw) {
   return String(raw || '')
     .trim()
-    .replace(/\u00C2\u00B4/g, 'Ëˆ')
-    .replace(/\u00B4/g, 'Ëˆ')
-    .replace(/[â€™']/g, 'Ëˆ')
-    .replace(/Ð·/g, 'É™')
+    .replace(/\u00C2\u00B4/g, 'ˈ')
+    .replace(/\u00B4/g, 'ˈ')
+    .replace(/[’']/g, 'ˈ')
+    .replace(/з/g, 'ə')
 }
 
 function phonemeInfoForLanguage(language) {
@@ -1123,7 +1123,7 @@ function phonemesFromSupabaseIpa(rawIpa, language = 'english', word = '') {
   return ipaParts.map((ipa, index) => ({
     text: chunks[index] || ipa,
     ipa,
-    tip: info[ipa]?.tip || PHONEME_INFO[ipa]?.tip || `Ã‚m /${ipa}/`,
+    tip: info[ipa]?.tip || PHONEME_INFO[ipa]?.tip || `Âm /${ipa}/`,
     isHard: info[ipa]?.hard ?? PHONEME_INFO[ipa]?.hard ?? false,
     isStressed: Boolean(tokens[index]?.isStressed),
     canScore: true,
@@ -1139,7 +1139,7 @@ function buildWordStructures(word) {
   return uniqueList(forms.flatMap(form => WORD_STRUCTURE_OVERRIDES[form] || [])).slice(0, 6)
 }
 
-// â”€â”€â”€ PRONUNCIATION PRACTICE (shared) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── PRONUNCIATION PRACTICE (shared) ─────────────────────────────────────
 
 
 function PronunciationPractice({
@@ -1172,7 +1172,7 @@ function PronunciationPractice({
   const hasUnverifiedIpa = phonemes.some(p => p.canScore === false && p.ipa && p.ipa !== '?')
   const canScoreWord = phonemes.length > 0 && phonemes.every(p => (p.canScore !== false || useGuessedIpaForScore) && p.ipa && p.ipa !== '?')
   const lookupNote = phonemes.find(p => p.lookupNote)?.lookupNote || null
-  // phases: ready â†’ recording â†’ scoring â†’ result
+  // phases: ready → recording → scoring → result
   const [searchVal, setSearchVal] = useState('')
   const [isUsageExpanded, setIsUsageExpanded] = useState(false)
   const [incorrectReports, setIncorrectReports] = useState(() => loadIncorrectWordReports())
@@ -1308,7 +1308,7 @@ function PronunciationPractice({
       const text = await fetchVietnameseTranslation(word, practiceLanguage)
       setTranslation({ word, text, loading: false, error: null })
     } catch (err) {
-      setTranslation({ word, text: '', loading: false, error: err.message || 'KhÃ´ng dá»‹ch tá»± Ä‘á»™ng Ä‘Æ°á»£c.' })
+      setTranslation({ word, text: '', loading: false, error: err.message || 'Không dịch tự động được.' })
     }
   }, [practiceLanguage, word])
 
@@ -1319,7 +1319,7 @@ function PronunciationPractice({
       const text = await onRefreshMeaning(word, practiceLanguage)
       setMeaningRefresh({ loading: false, error: null, text })
     } catch (err) {
-      setMeaningRefresh({ loading: false, error: err.message || 'KhÃ´ng cáº­p nháº­t nghÄ©a Ä‘Æ°á»£c.', text: '' })
+      setMeaningRefresh({ loading: false, error: err.message || 'Không cập nhật nghĩa được.', text: '' })
     }
   }, [onRefreshMeaning, practiceLanguage, word])
 
@@ -1349,7 +1349,7 @@ function PronunciationPractice({
       await updateWordIpa(word, azureIpa, practiceLanguage)
       setIpaSaveStatus({ loading: false, error: null, savedIpa: azureIpa })
     } catch (err) {
-      setIpaSaveStatus({ loading: false, error: err.message || 'Lá»—i khi lÆ°u IPA.', savedIpa: '' })
+      setIpaSaveStatus({ loading: false, error: err.message || 'Lỗi khi lưu IPA.', savedIpa: '' })
     }
   }
 
@@ -1370,7 +1370,7 @@ function PronunciationPractice({
       })
       setSaveStatus({ loading: false, error: null, saved: true })
     } catch (err) {
-      setSaveStatus({ loading: false, error: err.message || 'Lá»—i khi lÆ°u tá»«.', saved: false })
+      setSaveStatus({ loading: false, error: err.message || 'Lỗi khi lưu từ.', saved: false })
     }
   }
 
@@ -1380,8 +1380,8 @@ function PronunciationPractice({
 
   const navButtons = hasNav ? (
     <div className="flex flex-col gap-2.5 pt-1">
-      <button onClick={onPrev} disabled={!onPrev} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onPrev ? 'bg-amber-500/20 border-amber-400/40 text-amber-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>â€¹ Back</button>
-      <button onClick={onNext} disabled={!onNext} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onNext ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>Next â€º</button>
+      <button onClick={onPrev} disabled={!onPrev} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onPrev ? 'bg-amber-500/20 border-amber-400/40 text-amber-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>‹ Back</button>
+      <button onClick={onNext} disabled={!onNext} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onNext ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>Next ›</button>
     </div>
   ) : null
 
@@ -1389,7 +1389,7 @@ function PronunciationPractice({
     <div className={`flex flex-col ${compact ? 'h-full pb-52' : 'min-h-screen pb-64'}`}>
       <audio ref={audioRef} className="hidden" />
 
-      {/* TiÃªu Ä‘á» tá»« + IPA breakdown */}
+      {/* Tiêu đề từ + IPA breakdown */}
       <div className={`text-center px-4 ${compact ? 'py-1' : 'py-6'}`}>
         <WordHeader
           word={word}
@@ -1449,10 +1449,10 @@ function PronunciationPractice({
         />
       </div>
 
-      {/* Káº¿t quáº£ tá»•ng */}
+      {/* Kết quả tổng */}
       {result && !compact && <p className="mx-4 mb-1 text-center text-white/40 text-xs">Tap each sound for details</p>}
 
-        {/* NÃºt Ä‘iá»u khiá»ƒn */}
+        {/* Nút điều khiển */}
       <PracticeStatusMessages
         compact={compact}
         errorMsg={errorMsg}
@@ -1493,13 +1493,13 @@ function PronunciationPractice({
   )
 }
 
-// â”€â”€â”€ SCREENS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SCREENS ──────────────────────────────────────────────────────────────
 
 const LANG_CONFIG = {
-  en: { label: 'ðŸ‡ºðŸ‡¸ EN', sounds: SOUNDS,        vowelGroups: VOWEL_GROUPS,          consonantGroups: CONSONANT_GROUPS,         azureCode: 'en-US', subtitle: '48 Ã¢m chuáº©n tiáº¿ng Anh' },
-  es: { label: 'ðŸ‡ªðŸ‡¸ ES', sounds: SPANISH_SOUNDS, vowelGroups: SPANISH_VOWEL_GROUPS,  consonantGroups: SPANISH_CONSONANT_GROUPS, azureCode: 'es-ES', subtitle: 'Tiáº¿ng TÃ¢y Ban Nha' },
-  it: { label: 'ðŸ‡®ðŸ‡¹ IT', sounds: ITALIAN_SOUNDS, vowelGroups: ITALIAN_VOWEL_GROUPS,  consonantGroups: ITALIAN_CONSONANT_GROUPS, azureCode: 'it-IT', subtitle: 'Tiáº¿ng Ã' },
-  fr: { label: 'ðŸ‡«ðŸ‡· FR', sounds: FRENCH_SOUNDS,  vowelGroups: FRENCH_VOWEL_GROUPS,   consonantGroups: FRENCH_CONSONANT_GROUPS,  azureCode: 'fr-FR', subtitle: 'Tiáº¿ng PhÃ¡p' },
+  en: { label: '🇺🇸 EN', sounds: SOUNDS,        vowelGroups: VOWEL_GROUPS,          consonantGroups: CONSONANT_GROUPS,         azureCode: 'en-US', subtitle: '48 âm chuẩn tiếng Anh' },
+  es: { label: '🇪🇸 ES', sounds: SPANISH_SOUNDS, vowelGroups: SPANISH_VOWEL_GROUPS,  consonantGroups: SPANISH_CONSONANT_GROUPS, azureCode: 'es-ES', subtitle: 'Tiếng Tây Ban Nha' },
+  it: { label: '🇮🇹 IT', sounds: ITALIAN_SOUNDS, vowelGroups: ITALIAN_VOWEL_GROUPS,  consonantGroups: ITALIAN_CONSONANT_GROUPS, azureCode: 'it-IT', subtitle: 'Tiếng Ý' },
+  fr: { label: '🇫🇷 FR', sounds: FRENCH_SOUNDS,  vowelGroups: FRENCH_VOWEL_GROUPS,   consonantGroups: FRENCH_CONSONANT_GROUPS,  azureCode: 'fr-FR', subtitle: 'Tiếng Pháp' },
 }
 
 function SoundLibraryScreen({ lang, onSelectSound, onGoDict, onChangeLang }) {
@@ -1536,8 +1536,8 @@ function SoundLibraryScreen({ lang, onSelectSound, onGoDict, onChangeLang }) {
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2.5 rounded-2xl font-semibold text-sm transition-all ${tab === t ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}>
             {t === 'vowels'
-              ? `NguyÃªn Ã‚m (${cfg.sounds.filter(s=>s.type==='vowel').length})`
-              : `Phá»¥ Ã‚m (${cfg.sounds.filter(s=>s.type==='consonant').length})`}
+              ? `Nguyên Âm (${cfg.sounds.filter(s=>s.type==='vowel').length})`
+              : `Phụ Âm (${cfg.sounds.filter(s=>s.type==='consonant').length})`}
           </button>
         ))}
       </div>
@@ -1550,7 +1550,7 @@ function SoundLibraryScreen({ lang, onSelectSound, onGoDict, onChangeLang }) {
           <div key={g.key} className="mb-6">
             <div className="px-4 mb-3 flex items-center gap-2">
               <span className="text-white/80 font-semibold text-sm">{g.label}</span>
-              <span className="text-white/30 text-xs">{groupSounds.length} Ã¢m</span>
+              <span className="text-white/30 text-xs">{groupSounds.length} âm</span>
             </div>
             <div className="px-4 grid grid-cols-4 gap-2">
               {groupSounds.map(s => (
@@ -1592,7 +1592,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
             <Volume2 size={26} className="text-white" />
           </button>
         </div>
-        {sound.hard && <span className="inline-block bg-yellow-400/20 border border-yellow-400/40 text-yellow-300 text-xs rounded-lg px-2 py-0.5">â˜… KhÃ³ vá»›i ngÆ°á»i Viá»‡t</span>}
+        {sound.hard && <span className="inline-block bg-yellow-400/20 border border-yellow-400/40 text-yellow-300 text-xs rounded-lg px-2 py-0.5">★ Khó với người Việt</span>}
         <div className="mt-4 bg-white/10 rounded-2xl p-3">
           <p className="text-white/90 text-sm leading-relaxed">{sound.tip}</p>
         </div>
@@ -1601,7 +1601,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
       {/* Learn more links (English only) */}
       {lang === 'en' && (
         <div className="px-4 mb-6">
-          <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Há»c thÃªm</div>
+          <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Học thêm</div>
           <div className="flex flex-col gap-2">
             {RACHEL_URLS[sound.ipa] && (
               <a href={RACHEL_URLS[sound.ipa]} target="_blank" rel="noopener noreferrer"
@@ -1611,7 +1611,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
                 </div>
                 <div className="flex-1 text-left">
                   <div className="text-white/80 text-sm font-medium">Rachel's English</div>
-                  <div className="text-white/40 text-xs">HÆ°á»›ng dáº«n chi tiáº¿t Ã¢m /{sound.ipa}/</div>
+                  <div className="text-white/40 text-xs">Hướng dẫn chi tiết âm /{sound.ipa}/</div>
                 </div>
                 <ExternalLink size={14} className="text-white/30" />
               </a>
@@ -1622,8 +1622,8 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
                 <Play size={14} className="text-red-400 fill-red-400" />
               </div>
               <div className="flex-1 text-left">
-                <div className="text-white/80 text-sm font-medium">YouTube â€” Rachel's English</div>
-                <div className="text-white/40 text-xs">Video hÆ°á»›ng dáº«n Ã¢m {sound.label}</div>
+                <div className="text-white/80 text-sm font-medium">YouTube — Rachel's English</div>
+                <div className="text-white/40 text-xs">Video hướng dẫn âm {sound.label}</div>
               </div>
               <ExternalLink size={14} className="text-white/30" />
             </a>
@@ -1633,7 +1633,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
 
       {/* Practice words */}
       <div className="px-4">
-        <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Luyá»‡n táº­p vá»›i tá»«</div>
+        <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Luyện tập với từ</div>
         <div className="flex flex-col gap-3">
           {sound.words.map((w, idx) => (
             <button key={w.word} onClick={() => onPracticeWord(w, idx)}
@@ -1646,7 +1646,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
                 <button onClick={e => { e.stopPropagation(); speakNeural(w.word, azureCode) }} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
                   <Volume2 size={14} className="text-white/60" />
                 </button>
-                <div className="text-white/20 text-lg">â€º</div>
+                <div className="text-white/20 text-lg">›</div>
               </div>
             </button>
           ))}
@@ -1905,7 +1905,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       const firstLang = langsToSearch[0]
       setSearchResult({
         word: term,
-        meaning: 'ChÆ°a cÃ³ trong tá»« Ä‘iá»ƒn',
+        meaning: 'Chưa có trong từ điển',
         language: firstLang,
         source: 'external'
       })
@@ -1939,7 +1939,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       const text = await fetchVietnameseTranslation(word, language)
       setCommonTranslations(prev => ({ ...prev, [key]: { text, loading: false, error: null } }))
     } catch (err) {
-      setCommonTranslations(prev => ({ ...prev, [key]: { text: '', loading: false, error: err.message || 'KhÃ´ng dá»‹ch tá»± Ä‘á»™ng Ä‘Æ°á»£c.' } }))
+      setCommonTranslations(prev => ({ ...prev, [key]: { text: '', loading: false, error: err.message || 'Không dịch tự động được.' } }))
     }
   }
 
@@ -1976,7 +1976,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       setMeaningUpdates(prev => ({ ...prev, [key]: { loading: false, error: null, text: fields.vietnamese_definition, type } }))
       return fields.vietnamese_definition
     } catch (err) {
-      const message = err.message || 'KhÃ´ng cáº­p nháº­t nghÄ©a Ä‘Æ°á»£c.'
+      const message = err.message || 'Không cập nhật nghĩa được.'
       setMeaningUpdates(prev => ({ ...prev, [key]: { loading: false, error: message, text: '', type } }))
       throw new Error(message)
     }
@@ -2027,7 +2027,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       if (!nextEntry) return
       const nextDetail = nextEntry.detail || buildSupabaseWordDetail(nextEntry)
       openWord(nextEntry.word, {
-        meaning: nextDetail.meanings?.[0]?.meaningVi || `${nextEntry.level} Â· ${nextEntry.pos}`,
+        meaning: nextDetail.meanings?.[0]?.meaningVi || `${nextEntry.level} · ${nextEntry.pos}`,
         strictLookup: true,
         source: 'common',
         entry: nextEntry,
@@ -2061,7 +2061,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           key={`${activeWord.word}:${activeAzureCode}`}
           word={activeWord.word}
           meaning={activeWord.meaning}
-          metaLine={isCommonWord ? `${commonIndex + 1}/${commonList.length}${commonEntry ? ` Â· ${commonEntry.level} Â· ${commonEntry.pos} Â· ${LANGUAGE_SHORT[activeLanguage]}` : ''}` : null}
+          metaLine={isCommonWord ? `${commonIndex + 1}/${commonList.length}${commonEntry ? ` · ${commonEntry.level} · ${commonEntry.pos} · ${LANGUAGE_SHORT[activeLanguage]}` : ''}` : null}
           lang={activeAzureCode}
           prebuiltPhonemes={activePhonemes}
           strictLookup={activeWord.strictLookup}
@@ -2097,8 +2097,8 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
       <div className="px-4 pt-10 pb-4">
-        <h1 className="text-2xl font-bold text-white">Tá»« Äiá»ƒn PhÃ¡t Ã‚m</h1>
-        {showDictionarySearch && <p className="text-white/40 text-sm">Nháº­p tá»« Ä‘á»ƒ cháº©n Ä‘oÃ¡n phÃ¡t Ã¢m</p>}
+        <h1 className="text-2xl font-bold text-white">Từ Điển Phát Âm</h1>
+        {showDictionarySearch && <p className="text-white/40 text-sm">Nhập từ để chẩn đoán phát âm</p>}
       </div>
       {showDictionarySearch && (
         <>
@@ -2110,7 +2110,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                   ref={inputRef}
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="Nháº­p tá»« cáº§n tra..."
+                  placeholder="Nhập từ cần tra..."
                   className="w-full bg-white/5 border border-white/10 rounded-2xl pl-11 pr-4 py-3.5 text-white placeholder-white/30 focus:outline-none focus:border-white/30"
                 />
               </div>
@@ -2144,9 +2144,9 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-white font-semibold flex items-center gap-2">
                   <Search size={16} className="text-blue-400" />
-                  Káº¿t quáº£ tÃ¬m kiáº¿m
+                  Kết quả tìm kiếm
                 </h2>
-                <button onClick={() => setSearchResult(null)} className="text-[10px] text-white/40 hover:text-white/60">XÃ³a</button>
+                <button onClick={() => setSearchResult(null)} className="text-[10px] text-white/40 hover:text-white/60">Xóa</button>
               </div>
               <button
                 onClick={() => openWord(searchResult.word, {
@@ -2167,9 +2167,9 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                     <div className="text-white/60 text-sm italic line-clamp-2">{searchResult.meaning}</div>
                     <div className="mt-3 flex items-center gap-2">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${searchResult.source === 'common' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
-                        {searchResult.source === 'common' ? 'Trong thÆ° viá»‡n' : 'TÃ¬m tháº¥y bÃªn ngoÃ i'}
+                        {searchResult.source === 'common' ? 'Trong thư viện' : 'Tìm thấy bên ngoài'}
                       </span>
-                      <span className="text-[10px] text-white/30">Cháº¡m Ä‘á»ƒ luyá»‡n phÃ¡t Ã¢m â†’</span>
+                      <span className="text-[10px] text-white/30">Chạm để luyện phát âm →</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center text-blue-300 group-hover:bg-blue-500 group-hover:text-white transition-all shadow-lg shadow-blue-900/20">
@@ -2186,17 +2186,17 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
         <div className="flex items-end justify-between gap-3 mb-3">
           <div>
             <h2 className="text-white font-semibold">Supabase Vocabulary</h2>
-            <p className="text-white/40 text-xs">Dá»¯ liá»‡u tá»« báº£ng words/categories</p>
+            <p className="text-white/40 text-xs">Dữ liệu từ bảng words/categories</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div className="text-white/35 text-xs">{visibleCommonWords.length}/{filteredCommonWords.length} tá»«</div>
+            <div className="text-white/35 text-xs">{visibleCommonWords.length}/{filteredCommonWords.length} từ</div>
             <button
               type="button"
               onClick={() => refreshDictionary()}
               disabled={supabaseLoading}
               className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold text-white/55 disabled:opacity-40"
             >
-              Táº£i láº¡i
+              Tải lại
             </button>
           </div>
         </div>
@@ -2206,7 +2206,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           <input
             value={commonQuery}
             onChange={e => setCommonQuery(e.target.value)}
-            placeholder="TÃ¬m tá»« trong Supabase..."
+            placeholder="Tìm từ trong Supabase..."
             className="w-full bg-white/5 border border-white/10 rounded-2xl pl-9 pr-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30 text-sm"
           />
         </div>
@@ -2216,7 +2216,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
             onClick={() => setCommonLanguage('all')}
             className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${commonLanguage === 'all' ? 'bg-white text-gray-950 border-white' : 'bg-white/5 text-white/60 border-white/10'}`}
           >
-            ðŸŒ Táº¥t cáº£
+            🌐 Tất cả
           </button>
           {DICTIONARY_LANGUAGES.map(lang => (
             <button
@@ -2239,10 +2239,10 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           onChange={e => setCommonCategory(e.target.value)}
           className="w-full mb-3 bg-white/5 border border-white/10 rounded-2xl px-3 py-3 text-white focus:outline-none focus:border-white/30 text-sm"
         >
-          <option value="all">Táº¥t cáº£ chá»§ Ä‘á»</option>
+          <option value="all">Tất cả chủ đề</option>
           {supabaseCategories.map(category => (
             <option key={category.id} value={category.id}>
-              {category.level ? `${category.level} Â· ` : ''}{category.name}
+              {category.level ? `${category.level} · ` : ''}{category.name}
             </option>
           ))}
         </select>
@@ -2255,22 +2255,22 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
 
         {supabaseLoading && (
           <div className="mb-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/50 text-sm">
-            {supabaseWords.length > 0 ? 'Äang cáº­p nháº­t dá»¯ liá»‡u ná»n...' : 'Äang táº£i tá»« Supabase...'}
+            {supabaseWords.length > 0 ? 'Đang cập nhật dữ liệu nền...' : 'Đang tải từ Supabase...'}
           </div>
         )}
 
         {!supabaseLoading && dictionaryCachedAt && (
           <div className="mb-3 text-[11px] text-white/30">
             Cache local: {new Date(dictionaryCachedAt).toLocaleString()}
-            {commonQuery !== deferredCommonQuery ? ' Â· Ä‘ang lá»c...' : ''}
+            {commonQuery !== deferredCommonQuery ? ' · đang lọc...' : ''}
           </div>
         )}
 
         <div className="flex gap-2 overflow-x-auto pb-3">
           {[
-            ['all', `Táº¥t cáº£ Â· ${levelScopedCommonWords.length}`],
-            ['unlearned', `ChÆ°a há»c Â· ${scopedUnlearnedCount}`],
-            ['learned', `ÄÃ£ há»c Â· ${scopedLearnedCount}`],
+            ['all', `Tất cả · ${levelScopedCommonWords.length}`],
+            ['unlearned', `Chưa học · ${scopedUnlearnedCount}`],
+            ['learned', `Đã học · ${scopedLearnedCount}`],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -2303,7 +2303,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                 <button
                   type="button"
                   onClick={() => openWord(entry.word, {
-                meaning: firstMeaning?.meaningVi || `${entry.level} Â· ${entry.pos}`,
+                meaning: firstMeaning?.meaningVi || `${entry.level} · ${entry.pos}`,
                     strictLookup: true,
                     source: 'common',
                     entry,
@@ -2317,7 +2317,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                     <span className="shrink-0 text-base leading-none" title={entry.language || 'english'}>{LANGUAGE_FLAG[entry.language || 'english']}</span>
                     <span className="text-white text-sm font-medium">{entry.word}</span>
                     {entry.ipa && <span className="shrink-0 text-white/35 font-mono text-[11px]">/{entry.ipa}/</span>}
-                    {isLearned && <span className="shrink-0 text-emerald-300 text-xs">âœ“</span>}
+                    {isLearned && <span className="shrink-0 text-emerald-300 text-xs">✓</span>}
                     {Number.isFinite(savedScore) && (
                       <span className={`shrink-0 text-[10px] leading-none rounded px-1.5 py-1 border ${savedScore >= 85 ? 'text-emerald-200 border-emerald-400/30 bg-emerald-500/10' : savedScore >= 65 ? 'text-yellow-200 border-yellow-400/30 bg-yellow-500/10' : 'text-red-200 border-red-400/30 bg-red-500/10'}`}>
                         {savedScore}%
@@ -2328,7 +2328,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-white/35 text-xs">
                     <span>
                       {firstMeaning?.meaningVi || entry.pos}
-                      {entry.categoryName ? ` Â· ${entry.categoryName}` : ''}
+                      {entry.categoryName ? ` · ${entry.categoryName}` : ''}
                     </span>
                     {showRefreshMeaningAction && (
                       <>
@@ -2346,13 +2346,13 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                             updateMeaningFromWeb(entry.word, entry.pos, entry.language).catch(() => {})
                           }}
                           className={`inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold ${meaningUpdate?.loading ? 'border-white/10 bg-white/5 text-white/35' : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200'}`}
-                          aria-label={`Tá»± tÃ¬m vÃ  cáº­p nháº­t dá»¯ liá»‡u cho ${entry.word}`}
+                          aria-label={`Tự tìm và cập nhật dữ liệu cho ${entry.word}`}
                         >
                           <Pencil size={10} />
-                          {meaningUpdate?.loading ? 'Äang cáº­p nháº­t' : 'Sá»­a nghÄ©a'}
+                          {meaningUpdate?.loading ? 'Đang cập nhật' : 'Sửa nghĩa'}
                         </span>
                         {meaningUpdate?.error && <span className="text-red-200">{meaningUpdate.error}</span>}
-                        {meaningUpdate?.text && !meaningUpdate.loading && !meaningUpdate.error && <span className="text-emerald-200">ÄÃ£ cáº­p nháº­t theo {meaningUpdate.type || entry.pos}</span>}
+                        {meaningUpdate?.text && !meaningUpdate.loading && !meaningUpdate.error && <span className="text-emerald-200">Đã cập nhật theo {meaningUpdate.type || entry.pos}</span>}
                       </>
                     )}
                   </div>
@@ -2367,7 +2367,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                       }
                     }}
                     className="w-12 shrink-0 border-l border-white/10 text-white/65 flex items-center justify-center rounded-r-xl hover:bg-white/10 active:scale-95 transition-transform"
-                    aria-label={isExpanded ? 'Thu gá»n nghÄ©a vÃ  vÃ­ dá»¥' : 'Má»Ÿ rá»™ng nghÄ©a vÃ  vÃ­ dá»¥'}
+                    aria-label={isExpanded ? 'Thu gọn nghĩa và ví dụ' : 'Mở rộng nghĩa và ví dụ'}
                   >
                     {isExpanded ? <Minus size={18} /> : <Plus size={18} />}
                   </button>
@@ -2428,20 +2428,20 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
               onClick={() => setVisibleCommonLimit(limit => limit + DICTIONARY_PAGE_SIZE)}
               className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/70 active:scale-[0.99]"
             >
-              Xem thÃªm {Math.min(DICTIONARY_PAGE_SIZE, filteredCommonWords.length - visibleCommonWords.length)} tá»«
+              Xem thêm {Math.min(DICTIONARY_PAGE_SIZE, filteredCommonWords.length - visibleCommonWords.length)} từ
             </button>
           )}
         </div>
 
         {filteredCommonWords.length === 0 && (
-          <div className="text-white/40 text-sm py-10 text-center">KhÃ´ng tÃ¬m tháº¥y tá»« phÃ¹ há»£p.</div>
+          <div className="text-white/40 text-sm py-10 text-center">Không tìm thấy từ phù hợp.</div>
         )}
       </div>
     </div>
   )
 }
 
-// â”€â”€â”€ BOTTOM NAV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── BOTTOM NAV ───────────────────────────────────────────────────────────
 
 function MainApp({ profile }) {
   const [screen, setScreen] = useState('library')

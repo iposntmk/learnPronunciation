@@ -75,7 +75,7 @@ export default function WordIpaPanel({
                 onClick={saveAzureIpaToDb}
                 disabled={ipaSaveStatus.loading || !canSaveAzureIpa}
                 className={`shrink-0 inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold transition-all ${ipaSaveStatus.savedIpa === azureIpa ? 'bg-emerald-400/30 border-emerald-300/50 text-emerald-50' : 'bg-blue-500/15 border-blue-400/30 text-blue-100 active:scale-95 disabled:opacity-50'}`}
-                aria-label="LÆ°u IPA Azure vÃ o cÆ¡ sá»Ÿ dá»¯ liá»‡u"
+                aria-label="Lưu IPA Azure vào cơ sở dữ liệu"
                 title="Update this IPA to Supabase"
               >
                 <PlusCircle size={10} />
