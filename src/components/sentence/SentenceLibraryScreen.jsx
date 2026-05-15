@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Mic } from 'lucide-react'
-import { LEVELS, LANGUAGE_FLAG, LANGUAGE_LABEL, listLevels, listSentenceTopics, listSentences, normalizeLanguage } from '../../supabaseData.js'
+import { LEVELS, listLevels, listSentenceTopics, listSentences, normalizeLanguage } from '../../supabaseData.js'
+import { LANGUAGE_FLAG, LANGUAGE_LABEL } from '../../utils/constants/languages.js'
 import { scoreBg, scoreColor } from '../../utils/scoring/scoreUi.js'
 
 export default function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
