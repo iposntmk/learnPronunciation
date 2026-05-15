@@ -1,43 +1,67 @@
-import React, { Suspense, lazy, useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react'
-import { Mic, Volume2, Search, ChevronLeft, ChevronRight, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings, Shield, LogOut, Pencil, PlusCircle, Sprout } from 'lucide-react'
+﻿import React, { Suspense, lazy, useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react'
+import { Mic, Volume2, Search, ChevronLeft, ChevronRight, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings, Shield, LogOut, Pencil } from 'lucide-react'
 import {
   SOUNDS, VOWEL_GROUPS, CONSONANT_GROUPS,
   SPANISH_SOUNDS, SPANISH_VOWEL_GROUPS, SPANISH_CONSONANT_GROUPS, SPANISH_PHONEME_INFO,
   ITALIAN_SOUNDS, ITALIAN_VOWEL_GROUPS, ITALIAN_CONSONANT_GROUPS, ITALIAN_PHONEME_INFO,
   FRENCH_SOUNDS,  FRENCH_VOWEL_GROUPS,  FRENCH_CONSONANT_GROUPS,  FRENCH_PHONEME_INFO,
 } from './data.js'
-import { scoreSentence, scoreWord } from './scorer.js'
-import { getAzureUsageSummary } from './azureUsage.js'
 import { speakNeural, speakPhoneme } from './tts.js'
 import AuthGate from './AuthGate.jsx'
+import ScoreCircle from './components/common/ScoreCircle.jsx'
+import AzureUsageBadge from './components/common/AzureUsageBadge.jsx'
+import LevelCombobox from './components/common/LevelCombobox.jsx'
+import BottomNav from './components/layout/BottomNav.jsx'
+import SentenceLibraryScreen from './components/sentence/SentenceLibraryScreen.jsx'
+import PracticeSentenceScreen from './components/sentence/PracticeSentenceScreen.jsx'
+import { DICTIONARY_CACHE_KEY, DICTIONARY_CATEGORIES_CACHE_KEY, DICTIONARY_PAGE_SIZE, buildSupabaseWordDetail, buildTranslateFallbackDetail, dictionaryWordKey, isUsefulWordMeaning, loadDictionaryCache, practiceExampleForLanguage, saveDictionaryCache, searchDictionaryEntries, supabaseWordToEntry } from './utils/dictionaryHelpers.js'
+import RecordingConsole from './components/practice/RecordingConsole.jsx'
+import WordPhonemeGrid from './components/practice/WordPhonemeGrid.jsx'
+import WordHeader from './components/practice/WordHeader.jsx'
+import WordIpaPanel from './components/practice/WordIpaPanel.jsx'
+import WordUsagePanel from './components/practice/WordUsagePanel.jsx'
+import RootWordBadge from './components/practice/RootWordBadge.jsx'
+import PracticeStatusMessages from './components/practice/PracticeStatusMessages.jsx'
+import PracticeNavigationActions from './components/practice/PracticeNavigationActions.jsx'
+import { scoreBg, scoreColor, scoreTextBg } from './utils/scoring/scoreUi.js'
+import { formatIpa } from './utils/phonemes/phonemeFormat.js'
+import { cleanPracticeWord } from './utils/words/wordNormalize.js'
+import { DEFAULT_PRACTICE_SETTINGS } from './utils/storage/practiceSettingsStorage.js'
+import { loadIncorrectWordReports, saveIncorrectWordReports } from './utils/storage/incorrectWordReportsStorage.js'
+import { AZURE_TO_LANGUAGE, DICTIONARY_LANGUAGES, LANGUAGE_FLAG, LANGUAGE_LABEL, LANGUAGE_SHORT, LANGUAGE_TO_APP_LANG, LANGUAGE_TO_AZURE } from './utils/constants/languages.js'
+import { usePracticeSettings } from './hooks/usePracticeSettings.js'
+import { useProgress } from './hooks/useProgress.js'
+import { useSentenceProgress } from './hooks/useSentenceProgress.js'
+import { useWordPronunciation } from './hooks/useWordPronunciation.js'
+import { useSentencePronunciation } from './hooks/useSentencePronunciation.js'
 import { supabase } from './supabaseClient.js'
-import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listLevels, listMyProgress, listMySentenceProgress, listSentenceTopics, listSentences, listWords, normalizeLanguage, savePronunciationResult, saveSentencePronunciationResult, setWordLearned, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
+import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listLevels, listSentenceTopics, listSentences, listWords, normalizeLanguage, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
 
 const AdminScreen = lazy(() => import('./AdminScreen.jsx'))
 
-// ─── RACHEL'S ENGLISH LINKS ────────────────────────────────────────────────
+// â”€â”€â”€ RACHEL'S ENGLISH LINKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const RACHEL_URLS = {
-  'iː': 'https://rachelsenglish.com/english-pronounce-ee-vowel/',
-  'ɪ':  'https://rachelsenglish.com/english-pronounce-ih-vowel/',
-  'ɛ':  'https://rachelsenglish.com/english-pronounce-eh-vowel/',
-  'æ':  'https://rachelsenglish.com/english-pronounce-aa-ae-vowel/',
-  'ʌ':  'https://rachelsenglish.com/english-pronounce-uh-butter-vowel/',
-  'ə':  'https://rachelsenglish.com/english-pronounce-schwa/',
-  'ɜː': 'https://rachelsenglish.com/english-pronounce-ur-vowel/',
-  'uː': 'https://rachelsenglish.com/english-pronounce-oo-vowel/',
-  'ʊ':  'https://rachelsenglish.com/english-pronounce-uh-push-vowel/',
-  'ɔː': 'https://rachelsenglish.com/english-pronounce-aw-vowel/',
-  'ɑː': 'https://rachelsenglish.com/english-pronounce-ah-vowel/',
-  'oʊ': 'https://rachelsenglish.com/english-pronounce-oh-diphthong/',
-  'eɪ': 'https://rachelsenglish.com/english-pronounce-ay-diphthong/',
-  'aɪ': 'https://rachelsenglish.com/english-pronounce-ai-diphthong/',
-  'ɔɪ': 'https://rachelsenglish.com/english-pronounce-oy-diphthong/',
-  'aʊ': 'https://rachelsenglish.com/english-pronounce-ow-diphthong/',
-  'ɑːr':'https://rachelsenglish.com/pronounce-ar-orn-etc/',
-  'ɔːr':'https://rachelsenglish.com/pronounce-word-2/',
-  'ɛər':'https://rachelsenglish.com/how-to-pronounce-air/',
-  'ɪər':'https://rachelsenglish.com/vowels-ipa-pronunciation-international-phonetic-alphabet/',
+  'iË': 'https://rachelsenglish.com/english-pronounce-ee-vowel/',
+  'Éª':  'https://rachelsenglish.com/english-pronounce-ih-vowel/',
+  'É›':  'https://rachelsenglish.com/english-pronounce-eh-vowel/',
+  'Ã¦':  'https://rachelsenglish.com/english-pronounce-aa-ae-vowel/',
+  'ÊŒ':  'https://rachelsenglish.com/english-pronounce-uh-butter-vowel/',
+  'É™':  'https://rachelsenglish.com/english-pronounce-schwa/',
+  'ÉœË': 'https://rachelsenglish.com/english-pronounce-ur-vowel/',
+  'uË': 'https://rachelsenglish.com/english-pronounce-oo-vowel/',
+  'ÊŠ':  'https://rachelsenglish.com/english-pronounce-uh-push-vowel/',
+  'É”Ë': 'https://rachelsenglish.com/english-pronounce-aw-vowel/',
+  'É‘Ë': 'https://rachelsenglish.com/english-pronounce-ah-vowel/',
+  'oÊŠ': 'https://rachelsenglish.com/english-pronounce-oh-diphthong/',
+  'eÉª': 'https://rachelsenglish.com/english-pronounce-ay-diphthong/',
+  'aÉª': 'https://rachelsenglish.com/english-pronounce-ai-diphthong/',
+  'É”Éª': 'https://rachelsenglish.com/english-pronounce-oy-diphthong/',
+  'aÊŠ': 'https://rachelsenglish.com/english-pronounce-ow-diphthong/',
+  'É‘Ër':'https://rachelsenglish.com/pronounce-ar-orn-etc/',
+  'É”Ër':'https://rachelsenglish.com/pronounce-word-2/',
+  'É›É™r':'https://rachelsenglish.com/how-to-pronounce-air/',
+  'ÉªÉ™r':'https://rachelsenglish.com/vowels-ipa-pronunciation-international-phonetic-alphabet/',
   'p':  'https://rachelsenglish.com/english-pronounce-b-p-consonants/',
   'b':  'https://rachelsenglish.com/english-pronounce-b-p-consonants/',
   't':  'https://rachelsenglish.com/english-pronounce-t-d-consonants/',
@@ -46,23 +70,23 @@ const RACHEL_URLS = {
   'g':  'https://rachelsenglish.com/english-pronounce-g-k-consonants/',
   'm':  'https://rachelsenglish.com/english-pronounce-m-consonant/',
   'n':  'https://rachelsenglish.com/english-pronounce-n-consonant/',
-  'ŋ':  'https://rachelsenglish.com/pronounce-n-n-vs-ng-n/',
+  'Å‹':  'https://rachelsenglish.com/pronounce-n-n-vs-ng-n/',
   'f':  'https://rachelsenglish.com/english-pronounce-f-v-consonants/',
   'v':  'https://rachelsenglish.com/english-pronounce-f-v-consonants/',
-  'θ':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
-  'ð':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
+  'Î¸':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
+  'Ã°':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
   's':  'https://rachelsenglish.com/english-pronounce-s-z-consonants/',
   'z':  'https://rachelsenglish.com/english-pronounce-s-z-consonants/',
-  'ʃ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
-  'ʒ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
+  'Êƒ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
+  'Ê’':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
   'h':  'https://rachelsenglish.com/english-pronounce-h-consonant/',
   'r':  'https://rachelsenglish.com/5-tips-for-r-in-american-english/',
   'j':  'https://rachelsenglish.com/english-pronounce-y-consonant/',
   'w':  'https://rachelsenglish.com/pronounce-w-consonant/',
   'l':  'https://rachelsenglish.com/english-pronounce-l-consonant/',
-  'tʃ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
-  'dʒ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
-  'ɾ':  'https://rachelsenglish.com/t-pronunciations/',
+  'tÊƒ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
+  'dÊ’': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
+  'É¾':  'https://rachelsenglish.com/t-pronunciations/',
 }
 
 // YouTube search URL for Rachel's English for a given IPA label
@@ -70,333 +94,333 @@ function rachelYouTubeSearch(label) {
   return `https://www.youtube.com/results?search_query=rachel%27s+english+${encodeURIComponent(label)}+sound`
 }
 
-// ─── PHONEME ENGINE ────────────────────────────────────────────────────────
+// â”€â”€â”€ PHONEME ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PHONEME_INFO = {
-  'θ':  { tip: 'Đặt đầu lưỡi giữa hai hàm răng, thổi khí không rung họng', hard: true },
-  'ð':  { tip: 'Lưỡi giữa răng nhưng rung họng (voiced)', hard: true },
-  'r':  { tip: 'Cuộn lưỡi ra sau không chạm gì, môi hơi tròn', hard: true },
-  'l':  { tip: 'Đầu lưỡi chạm sau răng cửa trên', hard: false },
-  'æ':  { tip: 'Mở miệng rộng, kéo về phía trước — "cat, bad"', hard: true },
-  'ɪ':  { tip: 'Âm /i/ ngắn — lưỡi cao, miệng thư giãn hơn /iː/', hard: false },
-  'iː': { tip: 'Âm /i/ dài, kéo hai góc môi sang ngang', hard: false },
-  'ʌ':  { tip: 'Giống "ă" Việt, miệng mở vừa, lưỡi giữa-thấp', hard: true },
-  'ɜː': { tip: 'Môi tròn nhẹ, lưỡi giữa, cuộn ra sau — "bird, word"', hard: true },
-  'ɑː': { tip: 'Âm "a" dài, mở miệng rộng', hard: false },
-  'ɔː': { tip: 'Môi tròn, miệng mở vừa — "saw, call"', hard: false },
-  'ʊ':  { tip: 'Âm /u/ ngắn, môi tròn nhẹ — "book, good"', hard: true },
-  'uː': { tip: 'Âm /u/ dài, môi tròn căng — "food, moon"', hard: false },
-  'ə':  { tip: 'Schwa — âm trung hòa, miệng hoàn toàn thư giãn', hard: false },
-  'ər': { tip: 'Schwa + cuộn lưỡi nhẹ (giọng Mỹ)', hard: false },
-  'eɪ': { tip: 'Diphthong: "e" trượt lên "i" — "day, make"', hard: false },
-  'aɪ': { tip: 'Diphthong: "a" rộng trượt lên "i" — "night, like"', hard: false },
-  'aɪər':{ tip: 'Diphthong + đuôi r-colored — "fire, acquire"', hard: false },
-  'aʊər':{ tip: 'Diphthong + đuôi r-colored — "hour, power"', hard: false },
-  'aʊ': { tip: 'Diphthong: "a" trượt lên "u" — "now, out"', hard: false },
-  'oʊ': { tip: 'Diphthong: "o" trượt lên "u" — "go, road"', hard: false },
-  'ɔɪ': { tip: 'Diphthong: "oi" trong "boy, voice"', hard: false },
-  'ɛər':{ tip: 'Diphthong: /ɛ/ + /ər/ — "there, where"', hard: false },
-  'ɪər':{ tip: 'Diphthong: /ɪ/ + /ər/ — "here, ear"', hard: false },
-  'ɑːr':{ tip: 'Âm "a" dài + cuộn lưỡi — "car, large"', hard: false },
-  'ɔːr':{ tip: 'Âm "ô" tròn + cuộn lưỡi — "more, door"', hard: false },
-  'ɾ':  { tip: 'Flap — /t/ hoặc /d/ giữa nguyên âm trong giọng Mỹ, như "d" nhanh', hard: true },
-  'v':  { tip: 'Răng cửa trên đặt lên môi dưới, rung họng', hard: true },
-  'w':  { tip: 'Chu môi tròn như "oa", không dùng răng', hard: true },
-  'f':  { tip: 'Răng trên + môi dưới, thổi khí không rung', hard: false },
-  'ŋ':  { tip: 'Lưỡi chạm vòm mềm phía sau, âm mũi', hard: false },
-  'ŋk': { tip: 'Lưỡi chạm vòm mềm + bật k nhẹ cuối', hard: false },
-  'ŋg': { tip: 'Lưỡi chạm vòm mềm + g rung', hard: false },
-  'ʃ':  { tip: 'Chu môi nhẹ, thổi khí — "sh" trong "ship"', hard: false },
-  'tʃ': { tip: 'Kết hợp t + ʃ — "ch" trong "church"', hard: false },
-  'dʒ': { tip: 'Kết hợp d + ʒ — "j" trong "judge"', hard: false },
-  'ʒ':  { tip: 'Giống "sh" nhưng rung họng — "s" trong "measure"', hard: true },
-  'n':  { tip: 'Lưỡi chạm sau răng trên, âm mũi', hard: false },
-  'm':  { tip: 'Khép môi, rung mũi', hard: false },
-  'p':  { tip: 'Bật môi, thổi khí (aspirated)', hard: false },
-  'b':  { tip: 'Bật môi, rung họng', hard: false },
-  't':  { tip: 'Lưỡi chạm sau răng trên, bật ra', hard: false },
-  'd':  { tip: 'Lưỡi chạm sau răng, rung họng', hard: false },
-  'k':  { tip: 'Lưỡi chạm vòm mềm, bật ra', hard: false },
-  'g':  { tip: 'Lưỡi chạm vòm mềm, rung họng', hard: false },
-  's':  { tip: 'Đầu lưỡi gần răng trên, thổi khí', hard: false },
-  'z':  { tip: 'Giống /s/ nhưng rung họng', hard: false },
-  'h':  { tip: 'Thổi khí từ họng nhẹ nhàng', hard: false },
-  'j':  { tip: 'Âm "y" đầu — lưỡi cao, miệng hé', hard: false },
+  'Î¸':  { tip: 'Äáº·t Ä‘áº§u lÆ°á»¡i giá»¯a hai hÃ m rÄƒng, thá»•i khÃ­ khÃ´ng rung há»ng', hard: true },
+  'Ã°':  { tip: 'LÆ°á»¡i giá»¯a rÄƒng nhÆ°ng rung há»ng (voiced)', hard: true },
+  'r':  { tip: 'Cuá»™n lÆ°á»¡i ra sau khÃ´ng cháº¡m gÃ¬, mÃ´i hÆ¡i trÃ²n', hard: true },
+  'l':  { tip: 'Äáº§u lÆ°á»¡i cháº¡m sau rÄƒng cá»­a trÃªn', hard: false },
+  'Ã¦':  { tip: 'Má»Ÿ miá»‡ng rá»™ng, kÃ©o vá» phÃ­a trÆ°á»›c â€” "cat, bad"', hard: true },
+  'Éª':  { tip: 'Ã‚m /i/ ngáº¯n â€” lÆ°á»¡i cao, miá»‡ng thÆ° giÃ£n hÆ¡n /iË/', hard: false },
+  'iË': { tip: 'Ã‚m /i/ dÃ i, kÃ©o hai gÃ³c mÃ´i sang ngang', hard: false },
+  'ÊŒ':  { tip: 'Giá»‘ng "Äƒ" Viá»‡t, miá»‡ng má»Ÿ vá»«a, lÆ°á»¡i giá»¯a-tháº¥p', hard: true },
+  'ÉœË': { tip: 'MÃ´i trÃ²n nháº¹, lÆ°á»¡i giá»¯a, cuá»™n ra sau â€” "bird, word"', hard: true },
+  'É‘Ë': { tip: 'Ã‚m "a" dÃ i, má»Ÿ miá»‡ng rá»™ng', hard: false },
+  'É”Ë': { tip: 'MÃ´i trÃ²n, miá»‡ng má»Ÿ vá»«a â€” "saw, call"', hard: false },
+  'ÊŠ':  { tip: 'Ã‚m /u/ ngáº¯n, mÃ´i trÃ²n nháº¹ â€” "book, good"', hard: true },
+  'uË': { tip: 'Ã‚m /u/ dÃ i, mÃ´i trÃ²n cÄƒng â€” "food, moon"', hard: false },
+  'É™':  { tip: 'Schwa â€” Ã¢m trung hÃ²a, miá»‡ng hoÃ n toÃ n thÆ° giÃ£n', hard: false },
+  'É™r': { tip: 'Schwa + cuá»™n lÆ°á»¡i nháº¹ (giá»ng Má»¹)', hard: false },
+  'eÉª': { tip: 'Diphthong: "e" trÆ°á»£t lÃªn "i" â€” "day, make"', hard: false },
+  'aÉª': { tip: 'Diphthong: "a" rá»™ng trÆ°á»£t lÃªn "i" â€” "night, like"', hard: false },
+  'aÉªÉ™r':{ tip: 'Diphthong + Ä‘uÃ´i r-colored â€” "fire, acquire"', hard: false },
+  'aÊŠÉ™r':{ tip: 'Diphthong + Ä‘uÃ´i r-colored â€” "hour, power"', hard: false },
+  'aÊŠ': { tip: 'Diphthong: "a" trÆ°á»£t lÃªn "u" â€” "now, out"', hard: false },
+  'oÊŠ': { tip: 'Diphthong: "o" trÆ°á»£t lÃªn "u" â€” "go, road"', hard: false },
+  'É”Éª': { tip: 'Diphthong: "oi" trong "boy, voice"', hard: false },
+  'É›É™r':{ tip: 'Diphthong: /É›/ + /É™r/ â€” "there, where"', hard: false },
+  'ÉªÉ™r':{ tip: 'Diphthong: /Éª/ + /É™r/ â€” "here, ear"', hard: false },
+  'É‘Ër':{ tip: 'Ã‚m "a" dÃ i + cuá»™n lÆ°á»¡i â€” "car, large"', hard: false },
+  'É”Ër':{ tip: 'Ã‚m "Ã´" trÃ²n + cuá»™n lÆ°á»¡i â€” "more, door"', hard: false },
+  'É¾':  { tip: 'Flap â€” /t/ hoáº·c /d/ giá»¯a nguyÃªn Ã¢m trong giá»ng Má»¹, nhÆ° "d" nhanh', hard: true },
+  'v':  { tip: 'RÄƒng cá»­a trÃªn Ä‘áº·t lÃªn mÃ´i dÆ°á»›i, rung há»ng', hard: true },
+  'w':  { tip: 'Chu mÃ´i trÃ²n nhÆ° "oa", khÃ´ng dÃ¹ng rÄƒng', hard: true },
+  'f':  { tip: 'RÄƒng trÃªn + mÃ´i dÆ°á»›i, thá»•i khÃ­ khÃ´ng rung', hard: false },
+  'Å‹':  { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m phÃ­a sau, Ã¢m mÅ©i', hard: false },
+  'Å‹k': { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m + báº­t k nháº¹ cuá»‘i', hard: false },
+  'Å‹g': { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m + g rung', hard: false },
+  'Êƒ':  { tip: 'Chu mÃ´i nháº¹, thá»•i khÃ­ â€” "sh" trong "ship"', hard: false },
+  'tÊƒ': { tip: 'Káº¿t há»£p t + Êƒ â€” "ch" trong "church"', hard: false },
+  'dÊ’': { tip: 'Káº¿t há»£p d + Ê’ â€” "j" trong "judge"', hard: false },
+  'Ê’':  { tip: 'Giá»‘ng "sh" nhÆ°ng rung há»ng â€” "s" trong "measure"', hard: true },
+  'n':  { tip: 'LÆ°á»¡i cháº¡m sau rÄƒng trÃªn, Ã¢m mÅ©i', hard: false },
+  'm':  { tip: 'KhÃ©p mÃ´i, rung mÅ©i', hard: false },
+  'p':  { tip: 'Báº­t mÃ´i, thá»•i khÃ­ (aspirated)', hard: false },
+  'b':  { tip: 'Báº­t mÃ´i, rung há»ng', hard: false },
+  't':  { tip: 'LÆ°á»¡i cháº¡m sau rÄƒng trÃªn, báº­t ra', hard: false },
+  'd':  { tip: 'LÆ°á»¡i cháº¡m sau rÄƒng, rung há»ng', hard: false },
+  'k':  { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m, báº­t ra', hard: false },
+  'g':  { tip: 'LÆ°á»¡i cháº¡m vÃ²m má»m, rung há»ng', hard: false },
+  's':  { tip: 'Äáº§u lÆ°á»¡i gáº§n rÄƒng trÃªn, thá»•i khÃ­', hard: false },
+  'z':  { tip: 'Giá»‘ng /s/ nhÆ°ng rung há»ng', hard: false },
+  'h':  { tip: 'Thá»•i khÃ­ tá»« há»ng nháº¹ nhÃ ng', hard: false },
+  'j':  { tip: 'Ã‚m "y" Ä‘áº§u â€” lÆ°á»¡i cao, miá»‡ng hÃ©', hard: false },
 }
 
 const WORD_IPA_RAW = {
-  about:[['a','ə'],['b','b'],['ou','aʊ'],['t','t']],
-  after:[['a','æ'],['f','f'],['ter','tər']],
-  again:[['a','ə'],['g','g'],['ai','eɪ'],['n','n']],
-  all:[['all','ɔːl']],
-  also:[['al','ɔːl'],['so','soʊ']],
-  always:[['al','ɔːl'],['ways','weɪz']],
-  another:[['an','ə'],['oth','ʌð'],['er','ər']],
-  answer:[['an','æn'],['swer','sər']],
-  ask:[['a','æ'],['sk','sk']],
-  back:[['b','b'],['a','æ'],['ck','k']],
-  bad:[['b','b'],['a','æ'],['d','d']],
-  bath:[['b','b'],['a','æ'],['th','θ']],
-  beautiful:[['beau','bjuː'],['ti','tɪ'],['ful','fəl']],
-  because:[['be','bɪ'],['cause','kɔːz']],
-  bed:[['b','b'],['e','ɛ'],['d','d']],
-  bird:[['b','b'],['ir','ɜː'],['d','d']],
-  book:[['b','b'],['oo','ʊ'],['k','k']],
-  both:[['b','b'],['o','oʊ'],['th','θ']],
-  brother:[['br','br'],['o','ʌ'],['th','ð'],['er','ər']],
-  but:[['b','b'],['u','ʌ'],['t','t']],
-  call:[['c','k'],['all','ɔːl']],
-  can:[['c','k'],['a','æ'],['n','n']],
-  cat:[['c','k'],['a','æ'],['t','t']],
-  careful:[['care','kɛər'],['ful','fəl']],
-  chair:[['ch','tʃ'],['air','ɛər']],
-  child:[['ch','tʃ'],['i','aɪ'],['ld','ld']],
-  city:[['ci','sɪ'],['ty','ɾi']],
-  cold:[['c','k'],['o','oʊ'],['ld','ld']],
-  come:[['c','k'],['ome','ʌm']],
-  computer:[['com','kəm'],['pu','pjuː'],['ter','tər']],
-  cup:[['c','k'],['u','ʌ'],['p','p']],
-  day:[['d','d'],['ay','eɪ']],
-  different:[['dif','dɪf'],['fer','fər'],['ent','ənt']],
-  do:[['d','d'],['o','uː']],
-  dog:[['d','d'],['o','ɑː'],['g','g']],
-  each:[['ea','iː'],['ch','tʃ']],
-  earth:[['ear','ɜː'],['th','θ']],
-  eat:[['ea','iː'],['t','t']],
-  enjoy:[['en','ɪn'],['joy','dʒɔɪ']],
-  enough:[['e','ɪ'],['nough','nʌf']],
-  every:[['ev','ɛv'],['er','ər'],['y','i']],
-  face:[['f','f'],['a','eɪ'],['ce','s']],
-  family:[['fam','fæm'],['i','ɪ'],['ly','li']],
-  father:[['fa','fɑː'],['th','ð'],['er','ər']],
-  feel:[['f','f'],['ee','iː'],['l','l']],
-  find:[['f','f'],['i','aɪ'],['nd','nd']],
-  five:[['f','f'],['ive','aɪv']],
-  flower:[['fl','fl'],['ow','aʊ'],['er','ər']],
-  food:[['f','f'],['oo','uː'],['d','d']],
-  friend:[['fr','fr'],['ie','ɛ'],['nd','nd']],
-  funny:[['fun','fʌn'],['ny','i']],
-  future:[['fu','fjuː'],['ture','tʃər']],
-  get:[['g','g'],['e','ɛ'],['t','t']],
-  giant:[['gi','dʒaɪ'],['ant','ənt']],
-  girl:[['g','g'],['ir','ɜː'],['l','l']],
-  give:[['g','g'],['ive','ɪv']],
-  good:[['g','g'],['oo','ʊ'],['d','d']],
-  great:[['gr','gr'],['ea','eɪ'],['t','t']],
-  hand:[['h','h'],['a','æ'],['nd','nd']],
-  happy:[['hap','hæp'],['py','pi']],
-  hard:[['h','h'],['ar','ɑːr'],['d','d']],
-  have:[['h','h'],['a','æ'],['ve','v']],
-  hear:[['h','h'],['ear','ɪər']],
-  heart:[['h','h'],['ear','ɑːr'],['t','t']],
-  hello:[['hel','hɛl'],['lo','oʊ']],
-  help:[['h','h'],['e','ɛ'],['lp','lp']],
-  here:[['h','h'],['ere','ɪər']],
-  high:[['h','h'],['igh','aɪ']],
-  hippo:[['hip','hɪp'],['po','oʊ']],
-  home:[['h','h'],['ome','oʊm']],
-  house:[['h','h'],['ou','aʊ'],['se','z']],
-  how:[['h','h'],['ow','aʊ']],
-  important:[['im','ɪm'],['por','pɔːr'],['tant','tənt']],
-  just:[['j','dʒ'],['u','ʌ'],['st','st']],
-  keep:[['k','k'],['ee','iː'],['p','p']],
-  know:[['kn','n'],['ow','oʊ']],
-  knowledge:[['know','nɑː'],['ledge','lɪdʒ']],
-  language:[['lan','læŋ'],['guage','gwɪdʒ']],
-  large:[['l','l'],['ar','ɑːr'],['ge','dʒ']],
-  last:[['l','l'],['a','æ'],['st','st']],
-  lazy:[['la','leɪ'],['zy','zi']],
-  learn:[['l','l'],['ear','ɜː'],['n','n']],
-  lemon:[['lem','lɛm'],['on','ən']],
-  light:[['l','l'],['igh','aɪ'],['t','t']],
-  like:[['l','l'],['i','aɪ'],['ke','k']],
-  little:[['lit','lɪt'],['tle','əl']],
-  live:[['l','l'],['i','ɪ'],['ve','v']],
-  lollipop:[['lol','lɑːl'],['li','ɪ'],['pop','pɑːp']],
-  look:[['l','l'],['oo','ʊ'],['k','k']],
-  loud:[['l','l'],['ou','aʊ'],['d','d']],
-  love:[['l','l'],['ove','ʌv']],
-  make:[['m','m'],['a','eɪ'],['ke','k']],
-  man:[['m','m'],['a','æ'],['n','n']],
-  match:[['m','m'],['a','æ'],['tch','tʃ']],
-  measure:[['mea','mɛ'],['sure','ʒər']],
-  moon:[['m','m'],['oo','uː'],['n','n']],
-  more:[['m','m'],['ore','ɔːr']],
-  mother:[['m','m'],['o','ʌ'],['th','ð'],['er','ər']],
-  much:[['m','m'],['u','ʌ'],['ch','tʃ']],
-  music:[['mu','mjuː'],['sic','zɪk']],
-  name:[['n','n'],['a','eɪ'],['me','m']],
-  nature:[['na','neɪ'],['ture','tʃər']],
-  near:[['n','n'],['ear','ɪər']],
-  need:[['n','n'],['ee','iː'],['d','d']],
-  next:[['n','n'],['e','ɛ'],['xt','kst']],
-  nice:[['n','n'],['i','aɪ'],['ce','s']],
-  night:[['n','n'],['igh','aɪ'],['t','t']],
-  notes:[['n','n'],['otes','oʊts']],
-  nothing:[['no','nʌ'],['th','θ'],['ing','ɪŋ']],
-  now:[['n','n'],['ow','aʊ']],
-  often:[['of','ɔː'],['ten','tən']],
-  old:[['o','oʊ'],['ld','ld']],
-  only:[['on','oʊn'],['ly','li']],
-  open:[['o','oʊ'],['pen','pən']],
-  other:[['o','ʌ'],['th','ð'],['er','ər']],
-  out:[['ou','aʊ'],['t','t']],
-  people:[['peo','piː'],['ple','pəl']],
-  phone:[['ph','f'],['one','oʊn']],
-  photo:[['pho','foʊ'],['to','toʊ']],
-  place:[['pl','pl'],['a','eɪ'],['ce','s']],
-  please:[['pl','pl'],['ea','iː'],['se','z']],
-  problem:[['pro','prɑː'],['blem','bləm']],
-  pronunciation:[['pro','prə'],['nun','nʌn'],['ci','sɪ'],['a','eɪ'],['tion','ʃən']],
-  put:[['p','p'],['u','ʊ'],['t','t']],
-  question:[['que','kwɛs'],['tion','tʃən']],
-  read:[['r','r'],['ea','iː'],['d','d']],
-  really:[['r','r'],['ea','iː'],['ll','l'],['y','i']],
-  red:[['r','r'],['e','ɛ'],['d','d']],
-  right:[['r','r'],['igh','aɪ'],['t','t']],
-  ring:[['r','r'],['ing','ɪŋ']],
-  road:[['r','r'],['oa','oʊ'],['d','d']],
-  run:[['r','r'],['u','ʌ'],['n','n']],
-  same:[['s','s'],['a','eɪ'],['me','m']],
-  say:[['s','s'],['ay','eɪ']],
-  school:[['sch','sk'],['ool','uːl']],
-  she:[['sh','ʃ'],['e','iː']],
-  should:[['sh','ʃ'],['oul','ʊ'],['d','d']],
-  sister:[['sis','sɪs'],['ter','tər']],
-  sleep:[['sl','sl'],['ee','iː'],['p','p']],
-  small:[['sm','sm'],['all','ɔːl']],
-  soft:[['s','s'],['o','ɔː'],['ft','ft']],
-  song:[['s','s'],['ong','ɔːŋ']],
-  sound:[['s','s'],['ou','aʊ'],['nd','nd']],
-  south:[['s','s'],['ou','aʊ'],['th','θ']],
-  speak:[['sp','sp'],['ea','iː'],['k','k']],
-  start:[['st','st'],['ar','ɑːr'],['t','t']],
-  stop:[['st','st'],['o','ɑː'],['p','p']],
-  story:[['sto','stɔːr'],['y','i']],
-  study:[['stu','stʌ'],['dy','di']],
-  sweater:[['sw','sw'],['eat','ɛt'],['er','ər']],
-  table:[['ta','teɪ'],['ble','bəl']],
-  take:[['t','t'],['a','eɪ'],['ke','k']],
-  teacher:[['tea','tiː'],['cher','tʃər']],
-  that:[['th','ð'],['a','æ'],['t','t']],
-  the:[['th','ð'],['e','ə']],
-  their:[['th','ð'],['eir','ɛər']],
-  them:[['th','ð'],['em','ɛm']],
-  then:[['th','ð'],['en','ɛn']],
-  there:[['th','ð'],['ere','ɛər']],
-  these:[['th','ð'],['ese','iːz']],
-  they:[['th','ð'],['ey','eɪ']],
-  thing:[['th','θ'],['ing','ɪŋ']],
-  think:[['th','θ'],['i','ɪ'],['nk','ŋk']],
-  this:[['th','ð'],['i','ɪ'],['s','z']],
-  those:[['th','ð'],['ose','oʊz']],
-  though:[['th','ð'],['ough','oʊ']],
-  three:[['thr','θr'],['ee','iː']],
-  through:[['thr','θr'],['ough','uː']],
-  time:[['t','t'],['i','aɪ'],['me','m']],
-  today:[['to','tə'],['day','deɪ']],
-  together:[['to','tə'],['geth','gɛð'],['er','ər']],
-  treasure:[['trea','trɛ'],['sure','ʒər']],
-  tree:[['tr','tr'],['ee','iː']],
-  turn:[['t','t'],['ur','ɜː'],['n','n']],
-  under:[['un','ʌn'],['der','dər']],
-  university:[['u','juː'],['ni','nɪ'],['ver','vɜː'],['si','sɪ'],['ty','ti']],
-  usual:[['u','juː'],['su','ʒu'],['al','əl']],
-  vegetable:[['veg','vɛdʒ'],['e','ɪ'],['ta','tə'],['ble','bəl']],
-  very:[['v','v'],['er','ɛr'],['y','i']],
-  vine:[['v','v'],['i','aɪ'],['ne','n']],
-  vision:[['vi','vɪ'],['sion','ʒən']],
-  vital:[['vi','vaɪ'],['tal','təl']],
-  voice:[['v','v'],['oi','ɔɪ'],['ce','s']],
-  want:[['w','w'],['an','ɑːn'],['t','t']],
-  water:[['wa','wɔː'],['ter','ɾər']],
-  weather:[['w','w'],['ea','ɛ'],['th','ð'],['er','ər']],
-  well:[['w','w'],['e','ɛ'],['ll','l']],
-  what:[['wh','w'],['a','ɑː'],['t','t']],
-  when:[['wh','w'],['en','ɛn']],
-  where:[['wh','w'],['ere','ɛər']],
-  which:[['wh','w'],['ich','ɪtʃ']],
-  who:[['wh','h'],['o','uː']],
-  why:[['wh','w'],['y','aɪ']],
-  will:[['w','w'],['i','ɪ'],['ll','l']],
-  wish:[['w','w'],['ish','ɪʃ']],
-  with:[['w','w'],['i','ɪ'],['th','θ']],
-  without:[['with','wɪð'],['out','aʊt']],
-  wonderful:[['won','wʌn'],['der','dər'],['ful','fəl']],
-  word:[['w','w'],['or','ɜː'],['d','d']],
-  world:[['w','w'],['or','ɜː'],['l','l'],['d','d']],
-  wow:[['w','w'],['ow','aʊ']],
-  write:[['wr','r'],['i','aɪ'],['te','t']],
-  year:[['y','j'],['ear','ɪər']],
-  yogurt:[['yo','joʊ'],['gurt','gərt']],
-  you:[['y','j'],['ou','uː']],
-  your:[['y','j'],['our','ɔːr']],
-  yummy:[['yum','jʌm'],['my','i']],
-  zebra:[['ze','ziː'],['bra','brə']],
-  better:[['bet','bɛt'],['ter','ɾər']],
-  muddy:[['mud','mʌd'],['dy','i']],
+  about:[['a','É™'],['b','b'],['ou','aÊŠ'],['t','t']],
+  after:[['a','Ã¦'],['f','f'],['ter','tÉ™r']],
+  again:[['a','É™'],['g','g'],['ai','eÉª'],['n','n']],
+  all:[['all','É”Ël']],
+  also:[['al','É”Ël'],['so','soÊŠ']],
+  always:[['al','É”Ël'],['ways','weÉªz']],
+  another:[['an','É™'],['oth','ÊŒÃ°'],['er','É™r']],
+  answer:[['an','Ã¦n'],['swer','sÉ™r']],
+  ask:[['a','Ã¦'],['sk','sk']],
+  back:[['b','b'],['a','Ã¦'],['ck','k']],
+  bad:[['b','b'],['a','Ã¦'],['d','d']],
+  bath:[['b','b'],['a','Ã¦'],['th','Î¸']],
+  beautiful:[['beau','bjuË'],['ti','tÉª'],['ful','fÉ™l']],
+  because:[['be','bÉª'],['cause','kÉ”Ëz']],
+  bed:[['b','b'],['e','É›'],['d','d']],
+  bird:[['b','b'],['ir','ÉœË'],['d','d']],
+  book:[['b','b'],['oo','ÊŠ'],['k','k']],
+  both:[['b','b'],['o','oÊŠ'],['th','Î¸']],
+  brother:[['br','br'],['o','ÊŒ'],['th','Ã°'],['er','É™r']],
+  but:[['b','b'],['u','ÊŒ'],['t','t']],
+  call:[['c','k'],['all','É”Ël']],
+  can:[['c','k'],['a','Ã¦'],['n','n']],
+  cat:[['c','k'],['a','Ã¦'],['t','t']],
+  careful:[['care','kÉ›É™r'],['ful','fÉ™l']],
+  chair:[['ch','tÊƒ'],['air','É›É™r']],
+  child:[['ch','tÊƒ'],['i','aÉª'],['ld','ld']],
+  city:[['ci','sÉª'],['ty','É¾i']],
+  cold:[['c','k'],['o','oÊŠ'],['ld','ld']],
+  come:[['c','k'],['ome','ÊŒm']],
+  computer:[['com','kÉ™m'],['pu','pjuË'],['ter','tÉ™r']],
+  cup:[['c','k'],['u','ÊŒ'],['p','p']],
+  day:[['d','d'],['ay','eÉª']],
+  different:[['dif','dÉªf'],['fer','fÉ™r'],['ent','É™nt']],
+  do:[['d','d'],['o','uË']],
+  dog:[['d','d'],['o','É‘Ë'],['g','g']],
+  each:[['ea','iË'],['ch','tÊƒ']],
+  earth:[['ear','ÉœË'],['th','Î¸']],
+  eat:[['ea','iË'],['t','t']],
+  enjoy:[['en','Éªn'],['joy','dÊ’É”Éª']],
+  enough:[['e','Éª'],['nough','nÊŒf']],
+  every:[['ev','É›v'],['er','É™r'],['y','i']],
+  face:[['f','f'],['a','eÉª'],['ce','s']],
+  family:[['fam','fÃ¦m'],['i','Éª'],['ly','li']],
+  father:[['fa','fÉ‘Ë'],['th','Ã°'],['er','É™r']],
+  feel:[['f','f'],['ee','iË'],['l','l']],
+  find:[['f','f'],['i','aÉª'],['nd','nd']],
+  five:[['f','f'],['ive','aÉªv']],
+  flower:[['fl','fl'],['ow','aÊŠ'],['er','É™r']],
+  food:[['f','f'],['oo','uË'],['d','d']],
+  friend:[['fr','fr'],['ie','É›'],['nd','nd']],
+  funny:[['fun','fÊŒn'],['ny','i']],
+  future:[['fu','fjuË'],['ture','tÊƒÉ™r']],
+  get:[['g','g'],['e','É›'],['t','t']],
+  giant:[['gi','dÊ’aÉª'],['ant','É™nt']],
+  girl:[['g','g'],['ir','ÉœË'],['l','l']],
+  give:[['g','g'],['ive','Éªv']],
+  good:[['g','g'],['oo','ÊŠ'],['d','d']],
+  great:[['gr','gr'],['ea','eÉª'],['t','t']],
+  hand:[['h','h'],['a','Ã¦'],['nd','nd']],
+  happy:[['hap','hÃ¦p'],['py','pi']],
+  hard:[['h','h'],['ar','É‘Ër'],['d','d']],
+  have:[['h','h'],['a','Ã¦'],['ve','v']],
+  hear:[['h','h'],['ear','ÉªÉ™r']],
+  heart:[['h','h'],['ear','É‘Ër'],['t','t']],
+  hello:[['hel','hÉ›l'],['lo','oÊŠ']],
+  help:[['h','h'],['e','É›'],['lp','lp']],
+  here:[['h','h'],['ere','ÉªÉ™r']],
+  high:[['h','h'],['igh','aÉª']],
+  hippo:[['hip','hÉªp'],['po','oÊŠ']],
+  home:[['h','h'],['ome','oÊŠm']],
+  house:[['h','h'],['ou','aÊŠ'],['se','z']],
+  how:[['h','h'],['ow','aÊŠ']],
+  important:[['im','Éªm'],['por','pÉ”Ër'],['tant','tÉ™nt']],
+  just:[['j','dÊ’'],['u','ÊŒ'],['st','st']],
+  keep:[['k','k'],['ee','iË'],['p','p']],
+  know:[['kn','n'],['ow','oÊŠ']],
+  knowledge:[['know','nÉ‘Ë'],['ledge','lÉªdÊ’']],
+  language:[['lan','lÃ¦Å‹'],['guage','gwÉªdÊ’']],
+  large:[['l','l'],['ar','É‘Ër'],['ge','dÊ’']],
+  last:[['l','l'],['a','Ã¦'],['st','st']],
+  lazy:[['la','leÉª'],['zy','zi']],
+  learn:[['l','l'],['ear','ÉœË'],['n','n']],
+  lemon:[['lem','lÉ›m'],['on','É™n']],
+  light:[['l','l'],['igh','aÉª'],['t','t']],
+  like:[['l','l'],['i','aÉª'],['ke','k']],
+  little:[['lit','lÉªt'],['tle','É™l']],
+  live:[['l','l'],['i','Éª'],['ve','v']],
+  lollipop:[['lol','lÉ‘Ël'],['li','Éª'],['pop','pÉ‘Ëp']],
+  look:[['l','l'],['oo','ÊŠ'],['k','k']],
+  loud:[['l','l'],['ou','aÊŠ'],['d','d']],
+  love:[['l','l'],['ove','ÊŒv']],
+  make:[['m','m'],['a','eÉª'],['ke','k']],
+  man:[['m','m'],['a','Ã¦'],['n','n']],
+  match:[['m','m'],['a','Ã¦'],['tch','tÊƒ']],
+  measure:[['mea','mÉ›'],['sure','Ê’É™r']],
+  moon:[['m','m'],['oo','uË'],['n','n']],
+  more:[['m','m'],['ore','É”Ër']],
+  mother:[['m','m'],['o','ÊŒ'],['th','Ã°'],['er','É™r']],
+  much:[['m','m'],['u','ÊŒ'],['ch','tÊƒ']],
+  music:[['mu','mjuË'],['sic','zÉªk']],
+  name:[['n','n'],['a','eÉª'],['me','m']],
+  nature:[['na','neÉª'],['ture','tÊƒÉ™r']],
+  near:[['n','n'],['ear','ÉªÉ™r']],
+  need:[['n','n'],['ee','iË'],['d','d']],
+  next:[['n','n'],['e','É›'],['xt','kst']],
+  nice:[['n','n'],['i','aÉª'],['ce','s']],
+  night:[['n','n'],['igh','aÉª'],['t','t']],
+  notes:[['n','n'],['otes','oÊŠts']],
+  nothing:[['no','nÊŒ'],['th','Î¸'],['ing','ÉªÅ‹']],
+  now:[['n','n'],['ow','aÊŠ']],
+  often:[['of','É”Ë'],['ten','tÉ™n']],
+  old:[['o','oÊŠ'],['ld','ld']],
+  only:[['on','oÊŠn'],['ly','li']],
+  open:[['o','oÊŠ'],['pen','pÉ™n']],
+  other:[['o','ÊŒ'],['th','Ã°'],['er','É™r']],
+  out:[['ou','aÊŠ'],['t','t']],
+  people:[['peo','piË'],['ple','pÉ™l']],
+  phone:[['ph','f'],['one','oÊŠn']],
+  photo:[['pho','foÊŠ'],['to','toÊŠ']],
+  place:[['pl','pl'],['a','eÉª'],['ce','s']],
+  please:[['pl','pl'],['ea','iË'],['se','z']],
+  problem:[['pro','prÉ‘Ë'],['blem','blÉ™m']],
+  pronunciation:[['pro','prÉ™'],['nun','nÊŒn'],['ci','sÉª'],['a','eÉª'],['tion','ÊƒÉ™n']],
+  put:[['p','p'],['u','ÊŠ'],['t','t']],
+  question:[['que','kwÉ›s'],['tion','tÊƒÉ™n']],
+  read:[['r','r'],['ea','iË'],['d','d']],
+  really:[['r','r'],['ea','iË'],['ll','l'],['y','i']],
+  red:[['r','r'],['e','É›'],['d','d']],
+  right:[['r','r'],['igh','aÉª'],['t','t']],
+  ring:[['r','r'],['ing','ÉªÅ‹']],
+  road:[['r','r'],['oa','oÊŠ'],['d','d']],
+  run:[['r','r'],['u','ÊŒ'],['n','n']],
+  same:[['s','s'],['a','eÉª'],['me','m']],
+  say:[['s','s'],['ay','eÉª']],
+  school:[['sch','sk'],['ool','uËl']],
+  she:[['sh','Êƒ'],['e','iË']],
+  should:[['sh','Êƒ'],['oul','ÊŠ'],['d','d']],
+  sister:[['sis','sÉªs'],['ter','tÉ™r']],
+  sleep:[['sl','sl'],['ee','iË'],['p','p']],
+  small:[['sm','sm'],['all','É”Ël']],
+  soft:[['s','s'],['o','É”Ë'],['ft','ft']],
+  song:[['s','s'],['ong','É”ËÅ‹']],
+  sound:[['s','s'],['ou','aÊŠ'],['nd','nd']],
+  south:[['s','s'],['ou','aÊŠ'],['th','Î¸']],
+  speak:[['sp','sp'],['ea','iË'],['k','k']],
+  start:[['st','st'],['ar','É‘Ër'],['t','t']],
+  stop:[['st','st'],['o','É‘Ë'],['p','p']],
+  story:[['sto','stÉ”Ër'],['y','i']],
+  study:[['stu','stÊŒ'],['dy','di']],
+  sweater:[['sw','sw'],['eat','É›t'],['er','É™r']],
+  table:[['ta','teÉª'],['ble','bÉ™l']],
+  take:[['t','t'],['a','eÉª'],['ke','k']],
+  teacher:[['tea','tiË'],['cher','tÊƒÉ™r']],
+  that:[['th','Ã°'],['a','Ã¦'],['t','t']],
+  the:[['th','Ã°'],['e','É™']],
+  their:[['th','Ã°'],['eir','É›É™r']],
+  them:[['th','Ã°'],['em','É›m']],
+  then:[['th','Ã°'],['en','É›n']],
+  there:[['th','Ã°'],['ere','É›É™r']],
+  these:[['th','Ã°'],['ese','iËz']],
+  they:[['th','Ã°'],['ey','eÉª']],
+  thing:[['th','Î¸'],['ing','ÉªÅ‹']],
+  think:[['th','Î¸'],['i','Éª'],['nk','Å‹k']],
+  this:[['th','Ã°'],['i','Éª'],['s','z']],
+  those:[['th','Ã°'],['ose','oÊŠz']],
+  though:[['th','Ã°'],['ough','oÊŠ']],
+  three:[['thr','Î¸r'],['ee','iË']],
+  through:[['thr','Î¸r'],['ough','uË']],
+  time:[['t','t'],['i','aÉª'],['me','m']],
+  today:[['to','tÉ™'],['day','deÉª']],
+  together:[['to','tÉ™'],['geth','gÉ›Ã°'],['er','É™r']],
+  treasure:[['trea','trÉ›'],['sure','Ê’É™r']],
+  tree:[['tr','tr'],['ee','iË']],
+  turn:[['t','t'],['ur','ÉœË'],['n','n']],
+  under:[['un','ÊŒn'],['der','dÉ™r']],
+  university:[['u','juË'],['ni','nÉª'],['ver','vÉœË'],['si','sÉª'],['ty','ti']],
+  usual:[['u','juË'],['su','Ê’u'],['al','É™l']],
+  vegetable:[['veg','vÉ›dÊ’'],['e','Éª'],['ta','tÉ™'],['ble','bÉ™l']],
+  very:[['v','v'],['er','É›r'],['y','i']],
+  vine:[['v','v'],['i','aÉª'],['ne','n']],
+  vision:[['vi','vÉª'],['sion','Ê’É™n']],
+  vital:[['vi','vaÉª'],['tal','tÉ™l']],
+  voice:[['v','v'],['oi','É”Éª'],['ce','s']],
+  want:[['w','w'],['an','É‘Ën'],['t','t']],
+  water:[['wa','wÉ”Ë'],['ter','É¾É™r']],
+  weather:[['w','w'],['ea','É›'],['th','Ã°'],['er','É™r']],
+  well:[['w','w'],['e','É›'],['ll','l']],
+  what:[['wh','w'],['a','É‘Ë'],['t','t']],
+  when:[['wh','w'],['en','É›n']],
+  where:[['wh','w'],['ere','É›É™r']],
+  which:[['wh','w'],['ich','ÉªtÊƒ']],
+  who:[['wh','h'],['o','uË']],
+  why:[['wh','w'],['y','aÉª']],
+  will:[['w','w'],['i','Éª'],['ll','l']],
+  wish:[['w','w'],['ish','ÉªÊƒ']],
+  with:[['w','w'],['i','Éª'],['th','Î¸']],
+  without:[['with','wÉªÃ°'],['out','aÊŠt']],
+  wonderful:[['won','wÊŒn'],['der','dÉ™r'],['ful','fÉ™l']],
+  word:[['w','w'],['or','ÉœË'],['d','d']],
+  world:[['w','w'],['or','ÉœË'],['l','l'],['d','d']],
+  wow:[['w','w'],['ow','aÊŠ']],
+  write:[['wr','r'],['i','aÉª'],['te','t']],
+  year:[['y','j'],['ear','ÉªÉ™r']],
+  yogurt:[['yo','joÊŠ'],['gurt','gÉ™rt']],
+  you:[['y','j'],['ou','uË']],
+  your:[['y','j'],['our','É”Ër']],
+  yummy:[['yum','jÊŒm'],['my','i']],
+  zebra:[['ze','ziË'],['bra','brÉ™']],
+  better:[['bet','bÉ›t'],['ter','É¾É™r']],
+  muddy:[['mud','mÊŒd'],['dy','i']],
   // words in SOUNDS data not previously covered
-  bee:[['b','b'],['ee','iː']],
-  feet:[['f','f'],['ee','iː'],['t','t']],
-  fish:[['f','f'],['i','ɪ'],['sh','ʃ']],
-  sit:[['s','s'],['i','ɪ'],['t','t']],
-  bit:[['b','b'],['i','ɪ'],['t','t']],
-  quick:[['qu','kw'],['i','ɪ'],['ck','k']],
-  egg:[['e','ɛ'],['gg','g']],
-  bag:[['b','b'],['a','æ'],['g','g']],
-  black:[['bl','bl'],['a','æ'],['ck','k']],
-  bus:[['b','b'],['u','ʌ'],['s','s']],
-  duck:[['d','d'],['u','ʌ'],['ck','k']],
-  banana:[['ba','bə'],['na','næ'],['na','nə']],
-  blue:[['bl','bl'],['ue','uː']],
-  ball:[['b','b'],['all','ɔːl']],
-  hot:[['h','h'],['o','ɑː'],['t','t']],
-  clock:[['cl','kl'],['o','ɑː'],['ck','k']],
-  dollar:[['d','d'],['o','ɑː'],['ll','l'],['ar','ər']],
-  go:[['g','g'],['o','oʊ']],
-  bike:[['b','b'],['i','aɪ'],['ke','k']],
-  boy:[['b','b'],['oy','ɔɪ']],
-  oil:[['oi','ɔɪ'],['l','l']],
-  car:[['c','k'],['ar','ɑːr']],
-  door:[['d','d'],['oor','ɔːr']],
-  pretty:[['pr','pr'],['ett','ɪt'],['y','i']],
-  plant:[['pl','pl'],['a','æ'],['nt','nt']],
-  baby:[['ba','beɪ'],['by','bi']],
-  big:[['b','b'],['i','ɪ'],['g','g']],
-  tiny:[['ti','taɪ'],['ny','ni']],
-  turtle:[['tur','tɜː'],['tle','təl']],
-  dinner:[['din','dɪn'],['ner','nər']],
-  date:[['d','d'],['a','eɪ'],['te','t']],
-  deep:[['d','d'],['ee','iː'],['p','p']],
-  candy:[['can','kæn'],['dy','di']],
-  cane:[['c','k'],['a','eɪ'],['ne','n']],
-  kind:[['k','k'],['i','aɪ'],['nd','nd']],
-  giggly:[['gig','gɪg'],['gly','li']],
-  meek:[['m','m'],['ee','iː'],['k','k']],
-  mouse:[['m','m'],['ou','aʊ'],['se','s']],
-  new:[['n','n'],['ew','juː']],
-  necklace:[['neck','nɛk'],['lace','lɪs']],
-  furry:[['fur','fɜː'],['ry','ri']],
-  nose:[['n','n'],['o','oʊ'],['se','z']],
-  shiny:[['sh','ʃ'],['i','aɪ'],['ny','ni']],
-  shoes:[['sh','ʃ'],['oes','uːz']],
-  prickly:[['pr','pr'],['i','ɪ'],['ck','k'],['ly','li']],
-  branch:[['br','br'],['a','æ'],['n','n'],['ch','tʃ']],
-  whale:[['wh','w'],['a','eɪ'],['le','l']],
-  cheddar:[['ch','tʃ'],['e','ɛ'],['dd','d'],['ar','ər']],
-  cheese:[['ch','tʃ'],['ee','iː'],['se','z']],
-  church:[['ch','tʃ'],['ur','ɜː'],['ch','tʃ']],
-  gentle:[['gen','dʒɛn'],['tle','təl']],
-  city_tap:[['ci','sɪ'],['ty','ɾi']],
-  butter:[['but','bʌt'],['ter','ɾər']],
-  before:[['be','bɪ'],['fore','fɔːr']],
-  breathe:[['br','br'],['eathe','iːð']],
-  morning:[['mor','mɔːr'],['ning','nɪŋ']],
-  learning:[['learn','lɜːrn'],['ing','ɪŋ']],
+  bee:[['b','b'],['ee','iË']],
+  feet:[['f','f'],['ee','iË'],['t','t']],
+  fish:[['f','f'],['i','Éª'],['sh','Êƒ']],
+  sit:[['s','s'],['i','Éª'],['t','t']],
+  bit:[['b','b'],['i','Éª'],['t','t']],
+  quick:[['qu','kw'],['i','Éª'],['ck','k']],
+  egg:[['e','É›'],['gg','g']],
+  bag:[['b','b'],['a','Ã¦'],['g','g']],
+  black:[['bl','bl'],['a','Ã¦'],['ck','k']],
+  bus:[['b','b'],['u','ÊŒ'],['s','s']],
+  duck:[['d','d'],['u','ÊŒ'],['ck','k']],
+  banana:[['ba','bÉ™'],['na','nÃ¦'],['na','nÉ™']],
+  blue:[['bl','bl'],['ue','uË']],
+  ball:[['b','b'],['all','É”Ël']],
+  hot:[['h','h'],['o','É‘Ë'],['t','t']],
+  clock:[['cl','kl'],['o','É‘Ë'],['ck','k']],
+  dollar:[['d','d'],['o','É‘Ë'],['ll','l'],['ar','É™r']],
+  go:[['g','g'],['o','oÊŠ']],
+  bike:[['b','b'],['i','aÉª'],['ke','k']],
+  boy:[['b','b'],['oy','É”Éª']],
+  oil:[['oi','É”Éª'],['l','l']],
+  car:[['c','k'],['ar','É‘Ër']],
+  door:[['d','d'],['oor','É”Ër']],
+  pretty:[['pr','pr'],['ett','Éªt'],['y','i']],
+  plant:[['pl','pl'],['a','Ã¦'],['nt','nt']],
+  baby:[['ba','beÉª'],['by','bi']],
+  big:[['b','b'],['i','Éª'],['g','g']],
+  tiny:[['ti','taÉª'],['ny','ni']],
+  turtle:[['tur','tÉœË'],['tle','tÉ™l']],
+  dinner:[['din','dÉªn'],['ner','nÉ™r']],
+  date:[['d','d'],['a','eÉª'],['te','t']],
+  deep:[['d','d'],['ee','iË'],['p','p']],
+  candy:[['can','kÃ¦n'],['dy','di']],
+  cane:[['c','k'],['a','eÉª'],['ne','n']],
+  kind:[['k','k'],['i','aÉª'],['nd','nd']],
+  giggly:[['gig','gÉªg'],['gly','li']],
+  meek:[['m','m'],['ee','iË'],['k','k']],
+  mouse:[['m','m'],['ou','aÊŠ'],['se','s']],
+  new:[['n','n'],['ew','juË']],
+  necklace:[['neck','nÉ›k'],['lace','lÉªs']],
+  furry:[['fur','fÉœË'],['ry','ri']],
+  nose:[['n','n'],['o','oÊŠ'],['se','z']],
+  shiny:[['sh','Êƒ'],['i','aÉª'],['ny','ni']],
+  shoes:[['sh','Êƒ'],['oes','uËz']],
+  prickly:[['pr','pr'],['i','Éª'],['ck','k'],['ly','li']],
+  branch:[['br','br'],['a','Ã¦'],['n','n'],['ch','tÊƒ']],
+  whale:[['wh','w'],['a','eÉª'],['le','l']],
+  cheddar:[['ch','tÊƒ'],['e','É›'],['dd','d'],['ar','É™r']],
+  cheese:[['ch','tÊƒ'],['ee','iË'],['se','z']],
+  church:[['ch','tÊƒ'],['ur','ÉœË'],['ch','tÊƒ']],
+  gentle:[['gen','dÊ’É›n'],['tle','tÉ™l']],
+  city_tap:[['ci','sÉª'],['ty','É¾i']],
+  butter:[['but','bÊŒt'],['ter','É¾É™r']],
+  before:[['be','bÉª'],['fore','fÉ”Ër']],
+  breathe:[['br','br'],['eathe','iËÃ°']],
+  morning:[['mor','mÉ”Ër'],['ning','nÉªÅ‹']],
+  learning:[['learn','lÉœËrn'],['ing','ÉªÅ‹']],
 }
 
 // Primary stress index (0-based) by vowel nucleus / stressed syllable.
-// Only multi-syllable words are listed; single-syllable words need no ˈ mark.
+// Only multi-syllable words are listed; single-syllable words need no Ëˆ mark.
 const WORD_STRESS_IDX = {
   // stress on 2nd group
   about: 1, again: 1, another: 1, banana: 1, because: 1, before: 1,
@@ -420,10 +444,10 @@ const WORD_STRESS_IDX = {
 }
 
 const STRESS_VOWEL_MARKERS = [
-  'ɛər', 'ɪər', 'ɑːr', 'ɔːr', 'ər',
-  'iː', 'ɜː', 'uː', 'ɔː', 'ɑː',
-  'oʊ', 'eɪ', 'aɪ', 'aʊ', 'ɔɪ',
-  'ə', 'ɪ', 'ɛ', 'æ', 'ʌ', 'ʊ',
+  'É›É™r', 'ÉªÉ™r', 'É‘Ër', 'É”Ër', 'É™r',
+  'iË', 'ÉœË', 'uË', 'É”Ë', 'É‘Ë',
+  'oÊŠ', 'eÉª', 'aÉª', 'aÊŠ', 'É”Éª',
+  'É™', 'Éª', 'É›', 'Ã¦', 'ÊŒ', 'ÊŠ',
 ]
 
 function hasStressBearingVowel(ipa) {
@@ -434,11 +458,11 @@ function unsupportedWord(word) {
   return [{
     text: word,
     ipa: '?',
-    tip: 'Từ này chưa có IPA đáng tin trong từ điển English hiện tại',
+    tip: 'Tá»« nÃ y chÆ°a cÃ³ IPA Ä‘Ã¡ng tin trong tá»« Ä‘iá»ƒn English hiá»‡n táº¡i',
     isHard: false,
     isStressed: false,
     canScore: false,
-    lookupNote: 'Chưa hỗ trợ từ này trong English dictionary. App sẽ chỉ chấm những từ có IPA đã được kiểm chứng.',
+    lookupNote: 'ChÆ°a há»— trá»£ tá»« nÃ y trong English dictionary. App sáº½ chá»‰ cháº¥m nhá»¯ng tá»« cÃ³ IPA Ä‘Ã£ Ä‘Æ°á»£c kiá»ƒm chá»©ng.',
   }]
 }
 
@@ -447,7 +471,7 @@ function normalizeWordEntry(raw, stressIdx = -1) {
   return raw.map(([text, ipa], i) => ({
     ...(hasStressBearingVowel(ipa) ? { __vowelIdx: ++vowelIdx } : { __vowelIdx: null }),
     text, ipa,
-    tip: PHONEME_INFO[ipa]?.tip || `Âm /${ipa}/`,
+    tip: PHONEME_INFO[ipa]?.tip || `Ã‚m /${ipa}/`,
     isHard: PHONEME_INFO[ipa]?.hard || false,
     isStressed: hasStressBearingVowel(ipa) && vowelIdx === stressIdx,
     canScore: true,
@@ -458,10 +482,10 @@ function normalizeWordEntry(raw, stressIdx = -1) {
 const EXTERNAL_DICT_CACHE = new Map()
 
 const EN_FALLBACK_IPA_OVERRIDES = {
-  commitment: '/kəˈmɪtmənt/',
-  committee: '/kəˈmɪti/',
-  competitor: '/kəmˈpetətər/',
-  complex: '/kəmˈpleks/',
+  commitment: '/kÉ™ËˆmÉªtmÉ™nt/',
+  committee: '/kÉ™ËˆmÉªti/',
+  competitor: '/kÉ™mËˆpetÉ™tÉ™r/',
+  complex: '/kÉ™mËˆpleks/',
 }
 
 function stripIpaDecorators(ipa) {
@@ -470,44 +494,44 @@ function stripIpaDecorators(ipa) {
     .replace(/^\[|\]$/g, '')
     .replace(/[()]/g, '')
     .replace(/\./g, '')
-    .replace(/ˌ/g, '')
+    .replace(/ËŒ/g, '')
     .trim()
 }
 
 function normalizeExternalIpa(ipa) {
   return stripIpaDecorators(ipa)
     .normalize('NFC')
-    .replace(/ː/g, 'ː')
-    .replace(/ˑ/g, 'ː')
-    .replace(/l̩/g, 'əl')
-    .replace(/m̩/g, 'əm')
-    .replace(/n̩/g, 'ən')
-    .replace(/ɹ/g, 'r')
-    .replace(/ɡ/g, 'g')
-    .replace(/ɚ/g, 'ər')
-    .replace(/ɝ/g, 'ɜː')
-    .replace(/ɜr/g, 'ɜːr')
-    .replace(/ɫ/g, 'l')
-    .replace(/ᵻ/g, 'ɪ')
-    .replace(/ᵿ/g, 'ʊ')
-    .replace(/ʔ/g, 't')
-    .replace(/əʊ/g, 'oʊ')
-    .replace(/əu/g, 'oʊ')
-    .replace(/oː/g, 'oʊ')
-    .replace(/ɔːɹ/g, 'ɔːr')
-    .replace(/ɑːɹ/g, 'ɑːr')
-    .replace(/ɜːɹ/g, 'ɜːr')
-    .replace(/eə/g, 'ɛər')
-    .replace(/ɪə/g, 'ɪər')
-    .replace(/ʊə/g, 'ɔːr')
-    .replace(/aə/g, 'aɪər')
+    .replace(/Ë/g, 'Ë')
+    .replace(/Ë‘/g, 'Ë')
+    .replace(/lÌ©/g, 'É™l')
+    .replace(/mÌ©/g, 'É™m')
+    .replace(/nÌ©/g, 'É™n')
+    .replace(/É¹/g, 'r')
+    .replace(/É¡/g, 'g')
+    .replace(/Éš/g, 'É™r')
+    .replace(/É/g, 'ÉœË')
+    .replace(/Éœr/g, 'ÉœËr')
+    .replace(/É«/g, 'l')
+    .replace(/áµ»/g, 'Éª')
+    .replace(/áµ¿/g, 'ÊŠ')
+    .replace(/Ê”/g, 't')
+    .replace(/É™ÊŠ/g, 'oÊŠ')
+    .replace(/É™u/g, 'oÊŠ')
+    .replace(/oË/g, 'oÊŠ')
+    .replace(/É”ËÉ¹/g, 'É”Ër')
+    .replace(/É‘ËÉ¹/g, 'É‘Ër')
+    .replace(/ÉœËÉ¹/g, 'ÉœËr')
+    .replace(/eÉ™/g, 'É›É™r')
+    .replace(/ÉªÉ™/g, 'ÉªÉ™r')
+    .replace(/ÊŠÉ™/g, 'É”Ër')
+    .replace(/aÉ™/g, 'aÉªÉ™r')
 }
 
 const EXTERNAL_IPA_ATOMS = [
-  'aɪər', 'aʊər', 'tʃ', 'dʒ', 'iː', 'ɜː', 'uː', 'ɔː', 'ɑː', 'oʊ', 'eɪ', 'aɪ', 'aʊ', 'ɔɪ',
-  'ɛər', 'ɪər', 'ɑːr', 'ɔːr', 'ɜːr', 'ər', 'juː', 'kw', 'ks',
-  'ŋk', 'ŋg', 'θ', 'ð', 'ʃ', 'ʒ', 'ŋ',
-  'ə', 'ɪ', 'ɛ', 'æ', 'ʌ', 'ʊ', 'i', 'ɑ', 'ɒ', 'ɔ', 'e', 'a', 'ɜ', 'ɐ', 'ɾ',
+  'aÉªÉ™r', 'aÊŠÉ™r', 'tÊƒ', 'dÊ’', 'iË', 'ÉœË', 'uË', 'É”Ë', 'É‘Ë', 'oÊŠ', 'eÉª', 'aÉª', 'aÊŠ', 'É”Éª',
+  'É›É™r', 'ÉªÉ™r', 'É‘Ër', 'É”Ër', 'ÉœËr', 'É™r', 'juË', 'kw', 'ks',
+  'Å‹k', 'Å‹g', 'Î¸', 'Ã°', 'Êƒ', 'Ê’', 'Å‹',
+  'É™', 'Éª', 'É›', 'Ã¦', 'ÊŒ', 'ÊŠ', 'i', 'É‘', 'É’', 'É”', 'e', 'a', 'Éœ', 'É', 'É¾',
   'p', 'b', 't', 'd', 'k', 'g', 'm', 'n', 'f', 'v', 's', 'z', 'h', 'r', 'j', 'w', 'l',
 ]
 
@@ -521,7 +545,7 @@ function tokenizeExternalIpa(rawIpa) {
 
   while (i < ipa.length) {
     const ch = ipa[i]
-    if (ch === 'ˈ') {
+    if (ch === 'Ëˆ') {
       stressNext = true
       i++
       continue
@@ -591,7 +615,7 @@ function buildExternalWordEntry(word, rawIpa) {
   return tokens.map((token, index) => ({
     text: chunks[index] || '',
     ipa: token.ipa,
-    tip: PHONEME_INFO[token.ipa]?.tip || `Âm /${token.ipa}/`,
+    tip: PHONEME_INFO[token.ipa]?.tip || `Ã‚m /${token.ipa}/`,
     isHard: PHONEME_INFO[token.ipa]?.hard || false,
     isStressed: token.isStressed,
     canScore: true,
@@ -695,54 +719,54 @@ function g2p(word) {
     const try2 = (pat, ipa) => {
       if (rest.startsWith(pat)) { out.push({ text: pat, ipa }); i += pat.length; found = true }
     }
-    if (!found) try2('tch', 'tʃ')
-    if (!found) try2('dge', 'dʒ')
-    if (!found) try2('igh', 'aɪ')
+    if (!found) try2('tch', 'tÊƒ')
+    if (!found) try2('dge', 'dÊ’')
+    if (!found) try2('igh', 'aÉª')
     if (!found) try2('ght', 't')
-    if (!found && rest.startsWith('tion')) { out.push({ text: 'tion', ipa: 'ʃən' }); i += 4; found = true }
-    if (!found && rest.startsWith('sion')) { out.push({ text: 'sion', ipa: 'ʒən' }); i += 4; found = true }
-    if (!found && rest.startsWith('ture')) { out.push({ text: 'ture', ipa: 'tʃər' }); i += 4; found = true }
-    if (!found && rest.startsWith('th')) { out.push({ text: 'th', ipa: (isVoicedThWord || i > 0) ? 'ð' : 'θ' }); i += 2; found = true }
-    if (!found) try2('sh', 'ʃ')
-    if (!found) try2('ch', 'tʃ')
+    if (!found && rest.startsWith('tion')) { out.push({ text: 'tion', ipa: 'ÊƒÉ™n' }); i += 4; found = true }
+    if (!found && rest.startsWith('sion')) { out.push({ text: 'sion', ipa: 'Ê’É™n' }); i += 4; found = true }
+    if (!found && rest.startsWith('ture')) { out.push({ text: 'ture', ipa: 'tÊƒÉ™r' }); i += 4; found = true }
+    if (!found && rest.startsWith('th')) { out.push({ text: 'th', ipa: (isVoicedThWord || i > 0) ? 'Ã°' : 'Î¸' }); i += 2; found = true }
+    if (!found) try2('sh', 'Êƒ')
+    if (!found) try2('ch', 'tÊƒ')
     if (!found) try2('ph', 'f')
     if (!found && rest.startsWith('wh')) { out.push({ text: 'wh', ipa: next === 'o' ? 'h' : 'w' }); i += 2; found = true }
     if (!found) try2('ck', 'k')
-    if (!found && rest.startsWith('ng')) { out.push({ text: 'ng', ipa: 'aeiou'.includes(w[i + 2] || '') ? 'ŋg' : 'ŋ' }); i += 2; found = true }
+    if (!found && rest.startsWith('ng')) { out.push({ text: 'ng', ipa: 'aeiou'.includes(w[i + 2] || '') ? 'Å‹g' : 'Å‹' }); i += 2; found = true }
     if (!found) try2('qu', 'kw')
     if (!found) try2('kn', 'n')
     if (!found) try2('wr', 'r')
     if (!found && rest.startsWith('mb') && i === w.length - 2) { out.push({ text: 'mb', ipa: 'm' }); i += 2; found = true }
-    if (!found) try2('ee', 'iː')
-    if (!found) try2('ea', 'iː')
-    if (!found) try2('ai', 'eɪ')
-    if (!found) try2('ay', 'eɪ')
-    if (!found) try2('oa', 'oʊ')
-    if (!found) try2('oi', 'ɔɪ')
-    if (!found) try2('oy', 'ɔɪ')
-    if (!found) try2('oo', 'uː')
-    if (!found) try2('ou', 'aʊ')
-    if (!found) try2('ow', 'aʊ')
-    if (!found) try2('ew', 'juː')
-    if (!found) try2('ue', 'uː')
-    if (!found) try2('au', 'ɔː')
-    if (!found) try2('aw', 'ɔː')
-    if (!found) try2('er', 'ər')
-    if (!found) try2('ir', 'ɜː')
-    if (!found) try2('ur', 'ɜː')
-    if (!found) try2('or', 'ɔːr')
-    if (!found) try2('ar', 'ɑːr')
+    if (!found) try2('ee', 'iË')
+    if (!found) try2('ea', 'iË')
+    if (!found) try2('ai', 'eÉª')
+    if (!found) try2('ay', 'eÉª')
+    if (!found) try2('oa', 'oÊŠ')
+    if (!found) try2('oi', 'É”Éª')
+    if (!found) try2('oy', 'É”Éª')
+    if (!found) try2('oo', 'uË')
+    if (!found) try2('ou', 'aÊŠ')
+    if (!found) try2('ow', 'aÊŠ')
+    if (!found) try2('ew', 'juË')
+    if (!found) try2('ue', 'uË')
+    if (!found) try2('au', 'É”Ë')
+    if (!found) try2('aw', 'É”Ë')
+    if (!found) try2('er', 'É™r')
+    if (!found) try2('ir', 'ÉœË')
+    if (!found) try2('ur', 'ÉœË')
+    if (!found) try2('or', 'É”Ër')
+    if (!found) try2('ar', 'É‘Ër')
     if (!found) {
       const c = w[i]
       let ipa = c
-      if (c === 'a') ipa = 'æ'
-      else if (c === 'e') ipa = i === w.length - 1 ? null : 'ɛ'
-      else if (c === 'i') ipa = 'ɪ'
-      else if (c === 'o') ipa = 'ɑː'
-      else if (c === 'u') ipa = 'ʌ'
+      if (c === 'a') ipa = 'Ã¦'
+      else if (c === 'e') ipa = i === w.length - 1 ? null : 'É›'
+      else if (c === 'i') ipa = 'Éª'
+      else if (c === 'o') ipa = 'É‘Ë'
+      else if (c === 'u') ipa = 'ÊŒ'
       else if (c === 'y') ipa = i === 0 ? 'j' : 'i'
       else if (c === 'c') ipa = 'eiy'.includes(next) ? 's' : 'k'
-      else if (c === 'g') ipa = 'eiy'.includes(next) ? 'dʒ' : 'g'
+      else if (c === 'g') ipa = 'eiy'.includes(next) ? 'dÊ’' : 'g'
       else if (c === 's') ipa = 'aeiou'.includes(prev) && 'aeiou'.includes(next) ? 'z' : 's'
       else if (c === 'x') ipa = 'ks'
       else if (c === 'z') ipa = 'z'
@@ -751,14 +775,14 @@ function g2p(word) {
     }
   }
   return out
-    .filter(p => p.ipa && p.ipa !== '∅')
+    .filter(p => p.ipa && p.ipa !== 'âˆ…')
     .map(p => ({
       ...p,
-      tip: PHONEME_INFO[p.ipa]?.tip || `Âm /${p.ipa}/`,
+      tip: PHONEME_INFO[p.ipa]?.tip || `Ã‚m /${p.ipa}/`,
       isHard: PHONEME_INFO[p.ipa]?.hard || false,
       isStressed: false,
       canScore: false,
-      lookupNote: 'IPA này được đoán theo rule, không đủ tin cậy để chấm điểm English dictionary.',
+      lookupNote: 'IPA nÃ y Ä‘Æ°á»£c Ä‘oÃ¡n theo rule, khÃ´ng Ä‘á»§ tin cáº­y Ä‘á»ƒ cháº¥m Ä‘iá»ƒm English dictionary.',
     }))
 }
 
@@ -777,52 +801,11 @@ function buildPhonemes(pairs, infoMap) {
     .filter(p => p.ipa)
 }
 
-// ─── AUDIO HELPERS ────────────────────────────────────────────────────────
+// â”€â”€â”€ AUDIO HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function getSupportedMimeType() {
-  const candidates = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4']
-  return candidates.find(t => MediaRecorder.isTypeSupported(t)) || ''
-}
+// â”€â”€â”€ UI HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
-// ─── UI HELPERS ───────────────────────────────────────────────────────────
-
-function scoreColor(s) { return s >= 85 ? 'text-emerald-400' : s >= 65 ? 'text-yellow-400' : 'text-red-400' }
-function scoreBg(s) { return s >= 85 ? 'bg-emerald-500/20 border-emerald-500/50' : s >= 65 ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-red-500/20 border-red-500/50' }
-function scoreTextBg(s) { return s >= 85 ? 'bg-emerald-500/15 text-emerald-100 border-emerald-400/30' : s >= 65 ? 'bg-amber-400/15 text-amber-100 border-amber-300/30' : 'bg-red-500/15 text-red-100 border-red-400/30' }
-function cleanPracticeWord(value) { return String(value || '').toLowerCase().replace(/[^a-z'-]/g, '').trim() }
-function scoreLabel(s) { return s >= 90 ? 'Excellent!' : s >= 75 ? 'Good job!' : s >= 60 ? 'Almost there' : 'Keep practicing' }
-function formatIpa(p) { return `${p.isStressed ? 'ˈ' : ''}${p.ipa}` }
-
-function ScoreCircle({ score, size = 44 }) {
-  const s = Math.max(0, Math.min(100, Math.round(Number(score) || 0)))
-  const r = 18
-  const c = 2 * Math.PI * r
-  const off = c * (1 - s / 100)
-  const stroke = s >= 85 ? '#34d399' : s >= 65 ? '#facc15' : '#f87171'
-  return (
-    <div className="shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox="0 0 44 44">
-        <circle cx="22" cy="22" r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
-        <circle
-          cx="22"
-          cy="22"
-          r={r}
-          fill="none"
-          stroke={stroke}
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={off}
-          style={{ transition: 'none', transform: 'rotate(-90deg)', transformOrigin: '22px 22px' }}
-        />
-        <text x="22" y="24" textAnchor="middle" fontSize="12" fill="rgba(255,255,255,0.9)" fontWeight="700">
-          {s}%
-        </text>
-      </svg>
-    </div>
-  )
-}
 const GOOGLE_SOURCE_LANGUAGE = {
   english: 'en',
   spanish: 'es',
@@ -837,12 +820,12 @@ function googleTranslateApiUrl(text, language = 'english') {
 
 async function fetchVietnameseTranslation(text, language = 'english') {
   const resp = await fetch(googleTranslateApiUrl(text, language))
-  if (!resp.ok) throw new Error('Không dịch tự động được.')
+  if (!resp.ok) throw new Error('KhÃ´ng dá»‹ch tá»± Ä‘á»™ng Ä‘Æ°á»£c.')
   const data = await resp.json()
   const translated = Array.isArray(data?.[0])
     ? data[0].map(part => part?.[0]).filter(Boolean).join('')
     : ''
-  if (!translated) throw new Error('Không có kết quả dịch.')
+  if (!translated) throw new Error('KhÃ´ng cÃ³ káº¿t quáº£ dá»‹ch.')
   return translated
 }
 
@@ -989,22 +972,6 @@ async function fetchWordStudyFields(word, type = 'other', language = 'english') 
   }
 }
 
-const INCORRECT_WORD_REPORTS_KEY = 'incorrectWordReports'
-
-function loadIncorrectWordReports() {
-  try {
-    const raw = localStorage.getItem(INCORRECT_WORD_REPORTS_KEY)
-    const parsed = raw ? JSON.parse(raw) : {}
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function saveIncorrectWordReports(reports) {
-  localStorage.setItem(INCORRECT_WORD_REPORTS_KEY, JSON.stringify(reports))
-}
-
 function uniqueList(items) {
   const seen = new Set()
   return items
@@ -1124,16 +1091,16 @@ function looksLikeIpaForScoring(raw, language = 'english') {
   const value = String(raw || '').trim()
   if (!value) return false
   if (normalizeLanguage(language) !== 'english') return true
-  return /[əɪɛæʌʊɑɒɔɜθðʃʒŋˈː]/.test(value) || value.includes('´') || value.includes('’') || value.includes('з')
+  return /[É™ÉªÉ›Ã¦ÊŒÊŠÉ‘É’É”ÉœÎ¸Ã°ÊƒÊ’Å‹ËˆË]/.test(value) || value.includes('Â´') || value.includes('â€™') || value.includes('Ð·')
 }
 
 function normalizeSupabaseIpa(raw) {
   return String(raw || '')
     .trim()
-    .replace(/\u00C2\u00B4/g, 'ˈ')
-    .replace(/\u00B4/g, 'ˈ')
-    .replace(/[’']/g, 'ˈ')
-    .replace(/з/g, 'ə')
+    .replace(/\u00C2\u00B4/g, 'Ëˆ')
+    .replace(/\u00B4/g, 'Ëˆ')
+    .replace(/[â€™']/g, 'Ëˆ')
+    .replace(/Ð·/g, 'É™')
 }
 
 function phonemeInfoForLanguage(language) {
@@ -1156,7 +1123,7 @@ function phonemesFromSupabaseIpa(rawIpa, language = 'english', word = '') {
   return ipaParts.map((ipa, index) => ({
     text: chunks[index] || ipa,
     ipa,
-    tip: info[ipa]?.tip || PHONEME_INFO[ipa]?.tip || `Âm /${ipa}/`,
+    tip: info[ipa]?.tip || PHONEME_INFO[ipa]?.tip || `Ã‚m /${ipa}/`,
     isHard: info[ipa]?.hard ?? PHONEME_INFO[ipa]?.hard ?? false,
     isStressed: Boolean(tokens[index]?.isStressed),
     canScore: true,
@@ -1172,33 +1139,7 @@ function buildWordStructures(word) {
   return uniqueList(forms.flatMap(form => WORD_STRUCTURE_OVERRIDES[form] || [])).slice(0, 6)
 }
 
-const PRACTICE_SETTINGS_KEY = 'practiceSettings'
-const DEFAULT_PRACTICE_SETTINGS = {
-  readNewWordAloud: false,
-  unlearnedNavOnly: false,
-  autoTranslateOnLoad: false,
-  autoExpandUsage: false,
-  showRefreshMeaningAction: true,
-  showIncorrectAction: true,
-  showTranslateAction: true,
-  showDictionarySubtitle: true,
-}
-
-function loadPracticeSettings() {
-  try {
-    const raw = localStorage.getItem(PRACTICE_SETTINGS_KEY)
-    const parsed = raw ? JSON.parse(raw) : {}
-    return { ...DEFAULT_PRACTICE_SETTINGS, ...(parsed && typeof parsed === 'object' ? parsed : {}) }
-  } catch {
-    return DEFAULT_PRACTICE_SETTINGS
-  }
-}
-
-function savePracticeSettings(settings) {
-  localStorage.setItem(PRACTICE_SETTINGS_KEY, JSON.stringify(settings))
-}
-
-// ─── PRONUNCIATION PRACTICE (shared) ─────────────────────────────────────
+// â”€â”€â”€ PRONUNCIATION PRACTICE (shared) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 function PronunciationPractice({
@@ -1231,13 +1172,7 @@ function PronunciationPractice({
   const hasUnverifiedIpa = phonemes.some(p => p.canScore === false && p.ipa && p.ipa !== '?')
   const canScoreWord = phonemes.length > 0 && phonemes.every(p => (p.canScore !== false || useGuessedIpaForScore) && p.ipa && p.ipa !== '?')
   const lookupNote = phonemes.find(p => p.lookupNote)?.lookupNote || null
-  // phases: ready → recording → scoring → result
-  const [phase, setPhase] = useState('ready')
-  const [errorMsg, setErrorMsg] = useState(null)
-  const [result, setResult] = useState(null)
-  const [selectedIdx, setSelectedIdx] = useState(null)
-  const [recordingUrl, setRecordingUrl] = useState(null)
-  const [isPlayingBack, setIsPlayingBack] = useState(false)
+  // phases: ready â†’ recording â†’ scoring â†’ result
   const [searchVal, setSearchVal] = useState('')
   const [isUsageExpanded, setIsUsageExpanded] = useState(false)
   const [incorrectReports, setIncorrectReports] = useState(() => loadIncorrectWordReports())
@@ -1249,21 +1184,35 @@ function PronunciationPractice({
     const saved = localStorage.getItem('recordingDuration')
     return saved ? parseInt(saved, 10) : 3
   })
-  const [countdown, setCountdown] = useState(3)
-  const mrRef = useRef(null)
-  const streamRef = useRef(null)
-  const audioRef = useRef(null)
-  const timeoutRef = useRef(null)
-  const countdownRef = useRef(null)
-  const blobRef = useRef(null)
+  const {
+    audioRef,
+    countdown,
+    recordingUrl,
+    isPlayingBack,
+    phase,
+    errorMsg,
+    result,
+    selectedIdx,
+    setSelectedIdx,
+    startRecording,
+    stopRecording,
+    reset,
+    resetAndRecord,
+    playbackRecording,
+    playPhoneme,
+  } = useWordPronunciation({
+    phonemes,
+    lang,
+    recordingDuration,
+    canScoreWord,
+    isResolvingPhonemes,
+    lookupNote,
+    onScoreResult,
+  })
   const practiceLanguage = normalizeLanguage(AZURE_TO_LANGUAGE[lang] || 'english')
   const showRefreshMeaningAction = practiceSettings.showRefreshMeaningAction !== false
   const showIncorrectAction = practiceSettings.showIncorrectAction !== false
   const showTranslateAction = practiceSettings.showTranslateAction !== false
-
-  useEffect(() => () => {
-    if (recordingUrl) URL.revokeObjectURL(recordingUrl)
-  }, [recordingUrl])
 
   useEffect(() => {
     if (Number.isFinite(recordingDurationSetting)) {
@@ -1326,115 +1275,6 @@ function PronunciationPractice({
     return () => { cancelled = true }
   }, [prebuiltPhonemes, strictLookup, word])
 
-  const startBlobRecording = useCallback(() => {
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        streamRef.current = stream
-        const mimeType = getSupportedMimeType()
-        const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {})
-        mrRef.current = mr
-        const chunks = []
-        mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-        mr.onstop = async () => {
-          clearInterval(countdownRef.current)
-          stream.getTracks().forEach(t => t.stop())
-          if (chunks.length === 0) { setErrorMsg('No audio was recorded. Try again.'); setPhase('ready'); return }
-          const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
-          blobRef.current = blob
-          setRecordingUrl(URL.createObjectURL(blob))
-          setPhase('scoring')
-          try {
-            const data = await scoreWord(blob, phonemes, lang)
-            setResult(data); setPhase('result')
-            Promise.resolve(onScoreResult?.(data)).catch(err => console.warn('[Supabase] score sync failed:', err.message))
-          } catch (err) {
-            setErrorMsg(`Scoring error: ${err.message}`); setPhase('ready')
-          }
-        }
-        mr.start(100)
-        setPhase('recording')
-        setCountdown(recordingDuration)
-        countdownRef.current = setInterval(() => {
-          setCountdown(prev => Math.max(0, prev - 1))
-        }, 1000)
-        timeoutRef.current = setTimeout(() => {
-          if (mrRef.current?.state === 'recording') mrRef.current.stop()
-        }, recordingDuration * 1000)
-      })
-      .catch(err => {
-        const isDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
-        setErrorMsg(isDenied
-          ? 'Microphone permission is blocked. Enable Microphone from the lock icon in the address bar.'
-          : `Microphone error: ${err.message}`)
-      })
-  }, [lang, onScoreResult, phonemes, recordingDuration])
-
-  const startRecording = useCallback(() => {
-    if (isResolvingPhonemes) {
-      setErrorMsg('Resolving IPA for this word...')
-      return
-    }
-    if (!canScoreWord) {
-      setErrorMsg(lookupNote || 'This word does not have a reliable IPA yet.')
-      return
-    }
-    setRecordingUrl(null)
-    setErrorMsg(null)
-    startBlobRecording()
-  }, [canScoreWord, isResolvingPhonemes, lookupNote, startBlobRecording])
-
-  const stopRecording = () => {
-    clearTimeout(timeoutRef.current)
-    clearInterval(countdownRef.current)
-    if (mrRef.current?.state === 'recording') mrRef.current.stop()
-  }
-
-  const playPhoneme = useCallback(async (p) => {
-    if (!blobRef.current || p.audioOffset === null) return
-    try {
-      const ab = await blobRef.current.arrayBuffer()
-      const ctx = new AudioContext()
-      const buf = await ctx.decodeAudioData(ab)
-      const src = ctx.createBufferSource()
-      src.buffer = buf
-      src.connect(ctx.destination)
-      const dur = p.audioDuration > 0.02 ? p.audioDuration : undefined
-      src.start(0, p.audioOffset, dur)
-      src.onended = () => ctx.close()
-    } catch (e) { /* ignore */ }
-  }, [])
-
-  const reset = () => {
-    clearTimeout(timeoutRef.current)
-    clearInterval(countdownRef.current)
-    if (mrRef.current?.state !== 'inactive') mrRef.current?.stop()
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    blobRef.current = null
-    setPhase('ready'); setResult(null); setSelectedIdx(null)
-    setRecordingUrl(null); setIsPlayingBack(false); setErrorMsg(null)
-  }
-
-  const resetAndRecord = useCallback(() => {
-    clearTimeout(timeoutRef.current)
-    clearInterval(countdownRef.current)
-    if (mrRef.current?.state !== 'inactive') mrRef.current?.stop()
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    blobRef.current = null
-    setResult(null); setSelectedIdx(null)
-    setRecordingUrl(null); setIsPlayingBack(false); setErrorMsg(null)
-    startBlobRecording()
-  }, [startBlobRecording])
-
-  const playbackRecording = useCallback(() => {
-    if (!recordingUrl || !audioRef.current) return
-    if (isPlayingBack) {
-      audioRef.current.pause(); audioRef.current.currentTime = 0; setIsPlayingBack(false); return
-    }
-    audioRef.current.src = recordingUrl
-    audioRef.current.onended = () => setIsPlayingBack(false)
-    audioRef.current.play().then(() => setIsPlayingBack(true)).catch(() => setIsPlayingBack(false))
-  }, [isPlayingBack, recordingUrl])
-
   const sel = selectedIdx !== null && result ? result.phonemes[selectedIdx] : null
   const hasNav = onPrev !== null || onNext !== null
   const detailMeanings = detail?.meanings || []
@@ -1468,7 +1308,7 @@ function PronunciationPractice({
       const text = await fetchVietnameseTranslation(word, practiceLanguage)
       setTranslation({ word, text, loading: false, error: null })
     } catch (err) {
-      setTranslation({ word, text: '', loading: false, error: err.message || 'Không dịch tự động được.' })
+      setTranslation({ word, text: '', loading: false, error: err.message || 'KhÃ´ng dá»‹ch tá»± Ä‘á»™ng Ä‘Æ°á»£c.' })
     }
   }, [practiceLanguage, word])
 
@@ -1479,7 +1319,7 @@ function PronunciationPractice({
       const text = await onRefreshMeaning(word, practiceLanguage)
       setMeaningRefresh({ loading: false, error: null, text })
     } catch (err) {
-      setMeaningRefresh({ loading: false, error: err.message || 'Không cập nhật nghĩa được.', text: '' })
+      setMeaningRefresh({ loading: false, error: err.message || 'KhÃ´ng cáº­p nháº­t nghÄ©a Ä‘Æ°á»£c.', text: '' })
     }
   }, [onRefreshMeaning, practiceLanguage, word])
 
@@ -1499,15 +1339,6 @@ function PronunciationPractice({
     learnedControl.onToggle(result?.overall ?? null)
   }, [learnedControl, result])
 
-  const markDone = useCallback(() => {
-    if (learnedControl) {
-      toggleLearnedControl()
-      return
-    }
-    if (onNext) onNext()
-    else if (onBack) onBack()
-  }, [learnedControl, onBack, onNext, toggleLearnedControl])
-
   const azureIpa = result?.azureIpa || ''
   const canSaveAzureIpa = Boolean(azureIpa) && ipaSaveStatus.savedIpa !== azureIpa
 
@@ -1518,7 +1349,7 @@ function PronunciationPractice({
       await updateWordIpa(word, azureIpa, practiceLanguage)
       setIpaSaveStatus({ loading: false, error: null, savedIpa: azureIpa })
     } catch (err) {
-      setIpaSaveStatus({ loading: false, error: err.message || 'Lỗi khi lưu IPA.', savedIpa: '' })
+      setIpaSaveStatus({ loading: false, error: err.message || 'Lá»—i khi lÆ°u IPA.', savedIpa: '' })
     }
   }
 
@@ -1539,7 +1370,7 @@ function PronunciationPractice({
       })
       setSaveStatus({ loading: false, error: null, saved: true })
     } catch (err) {
-      setSaveStatus({ loading: false, error: err.message || 'Lỗi khi lưu từ.', saved: false })
+      setSaveStatus({ loading: false, error: err.message || 'Lá»—i khi lÆ°u tá»«.', saved: false })
     }
   }
 
@@ -1549,8 +1380,8 @@ function PronunciationPractice({
 
   const navButtons = hasNav ? (
     <div className="flex flex-col gap-2.5 pt-1">
-      <button onClick={onPrev} disabled={!onPrev} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onPrev ? 'bg-amber-500/20 border-amber-400/40 text-amber-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>‹ Back</button>
-      <button onClick={onNext} disabled={!onNext} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onNext ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>Next ›</button>
+      <button onClick={onPrev} disabled={!onPrev} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onPrev ? 'bg-amber-500/20 border-amber-400/40 text-amber-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>â€¹ Back</button>
+      <button onClick={onNext} disabled={!onNext} className={`w-full rounded-2xl ${compact ? 'py-2' : 'py-3'} flex items-center justify-center gap-1 text-sm font-bold whitespace-nowrap transition-all border ${onNext ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-200 active:scale-95' : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'}`}>Next â€º</button>
     </div>
   ) : null
 
@@ -1558,548 +1389,117 @@ function PronunciationPractice({
     <div className={`flex flex-col ${compact ? 'h-full pb-52' : 'min-h-screen pb-64'}`}>
       <audio ref={audioRef} className="hidden" />
 
-      {/* Tiêu đề từ + IPA breakdown */}
+      {/* TiÃªu Ä‘á» tá»« + IPA breakdown */}
       <div className={`text-center px-4 ${compact ? 'py-1' : 'py-6'}`}>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <button onClick={playModel} className={`${compact ? 'text-4xl' : 'text-5xl'} font-extrabold text-white hover:text-blue-300 transition-colors flex items-center gap-2 leading-tight`}>
-            {word}
-            {LANGUAGE_FLAG[practiceLanguage] && (
-              <span className={compact ? 'text-2xl' : 'text-3xl'} title={practiceLanguage}>
-                {LANGUAGE_FLAG[practiceLanguage]}
-              </span>
-            )}
-            <Volume2 size={compact ? 24 : 28} className="text-white/55" />
-          </button>
-          {result && (
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-left">
-              <ScoreCircle score={result.overall} size={compact ? 38 : 44} />
-              <div className="min-w-0">
-                <div className={`text-xs font-bold leading-tight ${scoreColor(result.overall)}`}>{scoreLabel(result.overall)}</div>
-                <div className="max-w-28 truncate text-[10px] text-white/45">Heard: {result.spokenWord || '-'}</div>
-              </div>
-            </div>
-          )}
-        </div>
-        {metaLine && <div className="text-[10px] text-white/40 mt-1">{metaLine}</div>}
-        <div className="mt-0.5 flex flex-wrap items-center justify-center gap-1.5 text-[11px] text-white/60">
-          <span>{meaning}</span>
-          {showRefreshMeaningAction && onRefreshMeaning && (
-            <button
-              type="button"
-              onClick={refreshMeaningFromWeb}
-              disabled={meaningRefresh.loading}
-              className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-200 disabled:opacity-50"
-              aria-label="Tự tìm và cập nhật dữ liệu từ"
-            >
-              <Pencil size={10} />
-              {meaningRefresh.loading ? 'Đang cập nhật' : 'Sửa nghĩa'}
-            </button>
-          )}
-          {source === 'external' && (
-            <button
-              type="button"
-              onClick={saveWordToDb}
-              disabled={saveStatus.loading || saveStatus.saved}
-              className={`inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold transition-all ${saveStatus.saved ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200' : 'bg-blue-500/10 border-blue-400/25 text-blue-200 active:scale-95 disabled:opacity-50'}`}
-              aria-label="Lưu từ vào từ điển của bạn"
-            >
-              <PlusCircle size={10} />
-              {saveStatus.loading ? 'Đang lưu...' : saveStatus.saved ? 'Đã lưu' : 'Thêm vào từ điển'}
-            </button>
-          )}
-        </div>
-        {(meaningRefresh.text || meaningRefresh.error || saveStatus.error) && (
-          <div className={`mt-1 text-[11px] ${meaningRefresh.error || saveStatus.error ? 'text-red-200' : 'text-emerald-200'}`}>
-            {meaningRefresh.error || saveStatus.error || (meaningRefresh.text ? `Đã cập nhật: ${meaningRefresh.text}` : '')}
-          </div>
-        )}
-        {wordRelations.rootWord && wordRelations.rootWord !== word.toLowerCase() && (
-          <div className="mt-1 flex justify-center">
-            {onSearchWord ? (
-              <button
-                type="button"
-                onClick={() => onSearchWord(wordRelations.rootWord)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 active:scale-95 transition-transform"
-                aria-label={`Practice root word ${wordRelations.rootWord}`}
-                title="Practice root word"
-              >
-                <Sprout size={12} />
-                <span className="text-emerald-200/70">Root:</span>
-                <span className="text-emerald-100">{wordRelations.rootWord}</span>
-                <span className="text-emerald-200/70">· Practice</span>
-              </button>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/70">
-                <Sprout size={12} />
-                <span className="text-white/50">Root:</span>
-                <span className="text-white/85">{wordRelations.rootWord}</span>
-              </span>
-            )}
-          </div>
-        )}
-        <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-          <div className={`${compact ? 'text-2xl' : 'text-3xl'} text-cyan-100/90 font-mono font-semibold break-all leading-tight`}>/{phonemes.map(formatIpa).join('')}/</div>
-          {hasUnverifiedIpa && phase === 'ready' && (
-            <label className={`shrink-0 rounded-xl border px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold active:scale-95 ${useGuessedIpaForScore ? 'bg-amber-400/20 border-amber-300/50 text-amber-100' : 'bg-white/5 border-white/10 text-white/55'}`}>
-              <input
-                type="checkbox"
-                checked={useGuessedIpaForScore}
-                onChange={event => setUseGuessedIpaForScore(event.target.checked)}
-                className="accent-amber-300"
-              />
-              Use this IPA for score
-            </label>
-          )}
-          {showIncorrectAction && (
-            <label className={`shrink-0 rounded-xl border px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold active:scale-95 ${isReportedIncorrect ? 'bg-red-500/20 border-red-400/40 text-red-200' : 'bg-white/5 border-white/10 text-white/55'}`}>
-              <input
-                type="checkbox"
-                checked={isReportedIncorrect}
-                onChange={toggleIncorrectReport}
-                className="accent-red-400"
-              />
-              Incorrect
-            </label>
-          )}
-          {showTranslateAction && (
-            <button
-              type="button"
-              onClick={translateInApp}
-              disabled={translation.loading}
-              className="shrink-0 rounded-xl bg-cyan-500/15 border border-cyan-400/30 text-cyan-100 px-2.5 py-1 text-xs font-semibold active:scale-95"
-            >
-              {translation.loading ? 'Translating' : 'Translate'}
-            </button>
-          )}
-        </div>
-
-        {(dictionaryIpa || azureIpa) && (
-          <div className="mt-2 mx-auto max-w-xl grid gap-1.5 text-sm text-left">
-            {dictionaryIpa && (
-              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5">
-                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-white/45">Dictionary</span>
-                <span className="flex-1 font-mono text-cyan-100/90 break-all">/{dictionaryIpa}/</span>
-              </div>
-            )}
-            {azureIpa && (
-              <div className="flex items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-1.5">
-                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-emerald-200/80">Azure</span>
-                <span className="flex-1 font-mono text-emerald-100 break-all">/{azureIpa}/</span>
-                <button
-                  type="button"
-                  onClick={saveAzureIpaToDb}
-                  disabled={ipaSaveStatus.loading || !canSaveAzureIpa}
-                  className={`shrink-0 inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold transition-all ${ipaSaveStatus.savedIpa === azureIpa ? 'bg-emerald-400/30 border-emerald-300/50 text-emerald-50' : 'bg-blue-500/15 border-blue-400/30 text-blue-100 active:scale-95 disabled:opacity-50'}`}
-                  aria-label="Lưu IPA Azure vào cơ sở dữ liệu"
-                  title="Update this IPA to Supabase"
-                >
-                  <PlusCircle size={10} />
-                  {ipaSaveStatus.loading ? 'Saving...' : ipaSaveStatus.savedIpa === azureIpa ? 'Saved' : 'Update to DB'}
-                </button>
-              </div>
-            )}
-            {ipaSaveStatus.error && (
-              <div className="text-[11px] text-red-200">{ipaSaveStatus.error}</div>
-            )}
-          </div>
-        )}
-
-        {showTranslateAction && (translation.loading || translation.text || translation.error) && (
-          <div className="mt-2 mx-auto max-w-xl rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2.5 text-left">
-            {translation.loading && <div className="text-cyan-100/70 text-sm">Translating...</div>}
-            {translation.text && <div className="text-cyan-50 text-sm leading-snug"><span className="text-cyan-200/80 font-semibold">Google Translate:</span> {translation.text}</div>}
-            {translation.error && <div className="text-red-200 text-sm mt-0.5">{translation.error}</div>}
-          </div>
-        )}
-
-        {usageMeanings.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setIsUsageExpanded(prev => !prev)}
-            className={`block w-full ${compact ? 'mt-1' : 'mt-3'} text-left bg-white/5 border border-white/10 rounded-xl overflow-hidden active:bg-white/10 transition-colors`}
-            aria-expanded={isUsageExpanded}
-          >
-            <div
-              className={`w-full ${compact ? 'px-2 py-1.5' : 'px-3 py-2.5'} flex items-center justify-between gap-2 active:bg-white/10 transition-colors`}
-            >
-              <span className="text-white/55 text-xs font-semibold uppercase tracking-wide">Usage</span>
-              <span className="text-white/45 text-xs">{isUsageExpanded ? 'Close' : 'Expand'}</span>
-            </div>
-            {isUsageExpanded && (
-              <div className={`${compact ? 'px-2 pb-1.5' : 'px-3 pb-2.5'} flex flex-col gap-1.5`}>
-                {usageMeanings.map((item, idx) => (
-                  <div key={`${word}-${item.pos}-${idx}`} className="min-w-0 text-sm leading-snug border-b border-white/10 last:border-b-0 pb-1.5 last:pb-0">
-                    <div className="text-emerald-300 font-semibold capitalize">{item.pos}</div>
-                    <div><span className="text-emerald-300 font-semibold">Meaning:</span> <span className="text-white/85">{item.meaningVi}</span></div>
-                    <div className="mt-1"><span className="text-emerald-300 font-semibold">Example:</span> <span className="text-white/75">{item.exampleEn}</span></div>
-                    <div className="text-white/50">{item.exampleVi}</div>
-                  </div>
-                ))}
-                {wordStructures.length > 0 && (
-                  <div className="border-t border-white/10 pt-1.5 mt-1 text-sm leading-snug">
-                    <div className="text-emerald-300 font-semibold">Collocations & Structures:</div>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {wordStructures.map(pattern => (
-                        <span key={pattern} className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-white/75">{pattern}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(wordRelations.family.length > 0 || wordRelations.synonyms.length > 0 || wordRelations.antonyms.length > 0) && (
-                  <div className="border-t border-white/10 pt-1.5 mt-1 grid gap-1 text-sm leading-snug">
-                    {wordRelations.family.length > 0 && <div><span className="text-emerald-300 font-semibold">Word Family:</span> <span className="text-white/75">{wordRelations.family.join(', ')}</span></div>}
-                    {wordRelations.synonyms.length > 0 && <div><span className="text-emerald-300 font-semibold">Synonyms:</span> <span className="text-white/75">{wordRelations.synonyms.join(', ')}</span></div>}
-                    {wordRelations.antonyms.length > 0 && <div><span className="text-emerald-300 font-semibold">Antonyms:</span> <span className="text-white/75">{wordRelations.antonyms.join(', ')}</span></div>}
-                  </div>
-                )}
-              </div>
-            )}
-          </button>
-        )}
-
-        <div className={`flex flex-nowrap justify-start gap-1 overflow-x-auto pb-1 ${compact ? 'mt-1' : 'mt-4'}`}>
-          {phonemes.map((p, idx) => {
-            const r = result?.phonemes[idx]
-            const hasScore = r && result?.spokenWord !== null
-            const bg = hasScore ? scoreBg(r.score) : 'bg-white/5 border-white/10'
-            const tc = hasScore ? scoreColor(r.score) : 'text-white/60'
-            return (
-              <button key={idx}
-                onClick={() => { speakPhoneme(p.text, p.ipa, lang); if (hasScore) setSelectedIdx(selectedIdx === idx ? null : idx) }}
-                className={`shrink-0 border rounded-xl ${compact ? 'px-2.5 py-1' : 'px-3 py-2'} flex flex-col items-center gap-0.5 whitespace-nowrap transition-all cursor-pointer active:scale-95 ${bg} ${selectedIdx === idx ? 'ring-2 ring-white/40' : ''}`}
-              >
-                <span className="text-white font-semibold text-sm">{p.text}</span>
-                <span className="text-white/45 font-mono text-sm">/{formatIpa(p)}/</span>
-                {hasScore && <span className={`text-xs font-bold ${tc}`}>{r.score}%</span>}
-                {p.isHard && !hasScore && <span className="text-yellow-400 text-xs">★</span>}
-              </button>
-            )
-          })}
-        </div>
-
-        {sel && (
-          <div className={`mt-3 mx-4 rounded-2xl p-3 border text-left ${scoreBg(sel.score)}`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-white font-semibold">{sel.text} <span className="text-white/40 font-mono text-sm">/{sel.ipa}/</span></span>
-              <div className="flex items-center gap-2">
-                {sel.audioOffset !== null && (
-                  <button onClick={() => playPhoneme(sel)}
-                    className="flex items-center gap-1 bg-white/10 hover:bg-white/20 rounded-lg px-2 py-1 text-white/70 text-xs active:scale-95 transition-transform">
-                    <Play size={11} className="fill-white/70 text-white/70" />
-                    You
-                  </button>
-                )}
-                <span className={`font-bold ${scoreColor(sel.score)}`}>{sel.score}%</span>
-              </div>
-            </div>
-            {sel.note && <p className="text-red-300 text-sm mb-1">{sel.note}</p>}
-            <p className="text-white/70 text-sm">{sel.tip}</p>
-          </div>
-        )}
+        <WordHeader
+          word={word}
+          meaning={meaning}
+          metaLine={metaLine}
+          compact={compact}
+          practiceLanguage={practiceLanguage}
+          languageFlag={LANGUAGE_FLAG[practiceLanguage]}
+          result={result}
+          playModel={playModel}
+          showRefreshMeaningAction={showRefreshMeaningAction}
+          onRefreshMeaning={onRefreshMeaning}
+          refreshMeaningFromWeb={refreshMeaningFromWeb}
+          meaningRefresh={meaningRefresh}
+          source={source}
+          saveWordToDb={saveWordToDb}
+          saveStatus={saveStatus}
+        />
+        <RootWordBadge rootWord={wordRelations.rootWord} currentWord={word} onSearchWord={onSearchWord} />
+        <WordIpaPanel
+          compact={compact}
+          phonemes={phonemes}
+          hasUnverifiedIpa={hasUnverifiedIpa}
+          phase={phase}
+          useGuessedIpaForScore={useGuessedIpaForScore}
+          setUseGuessedIpaForScore={setUseGuessedIpaForScore}
+          showIncorrectAction={showIncorrectAction}
+          isReportedIncorrect={isReportedIncorrect}
+          toggleIncorrectReport={toggleIncorrectReport}
+          showTranslateAction={showTranslateAction}
+          translateInApp={translateInApp}
+          translation={translation}
+          dictionaryIpa={dictionaryIpa}
+          azureIpa={azureIpa}
+          saveAzureIpaToDb={saveAzureIpaToDb}
+          ipaSaveStatus={ipaSaveStatus}
+          canSaveAzureIpa={canSaveAzureIpa}
+        />
+        <WordUsagePanel
+          compact={compact}
+          word={word}
+          usageMeanings={usageMeanings}
+          isUsageExpanded={isUsageExpanded}
+          setIsUsageExpanded={setIsUsageExpanded}
+          wordStructures={wordStructures}
+          wordRelations={wordRelations}
+        />
+        <WordPhonemeGrid
+          phonemes={phonemes}
+          result={result}
+          selectedIdx={selectedIdx}
+          setSelectedIdx={setSelectedIdx}
+          compact={compact}
+          lang={lang}
+          selectedPhoneme={sel}
+          playPhoneme={playPhoneme}
+        />
       </div>
 
-      {/* Kết quả tổng */}
+      {/* Káº¿t quáº£ tá»•ng */}
       {result && !compact && <p className="mx-4 mb-1 text-center text-white/40 text-xs">Tap each sound for details</p>}
-      {false && (
-          <div className="mx-4 mb-1 rounded-xl p-2 border bg-white/5 border-white/10">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-white/60 text-sm">Result:</span>
-              <span className="text-white/40 text-sm">Word: "{result.spokenWord || '—'}"</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-3 bg-white/10 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${result.overall >= 85 ? 'bg-emerald-400' : result.overall >= 65 ? 'bg-yellow-400' : 'bg-red-400'}`}
-                  style={{ width: `${result.overall}%` }} />
-              </div>
-              <span className={`font-bold text-lg ${scoreColor(result.overall)}`}>{result.overall}%</span>
-            </div>
-            <p className={`text-sm mt-1 ${scoreColor(result.overall)}`}>{scoreLabel(result.overall)}</p>
-            {/* <div className="mt-2 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 overflow-hidden">
-              <div className="flex items-center justify-between gap-2 mb-0.5">
-                <span className="text-white/60 text-xs font-semibold uppercase tracking-wide">Score</span>
-              </div>
-              <div className="flex items-end justify-center gap-1 min-h-6">
-                {Array.from({ length: 5 }).map((_, index) => {
-                  const earned = false
-                  return (
-                    <span
-                      key={index}
-                      className={`${earned ? '' : ''}`}
-                      style={{ animationDelay: earned ? `${index * 0.32}s` : '0s' }}
-                      aria-hidden="true"
-                    >
-                      🌹
-                    </span>
-                  )
-                })}
-              </div>
-            </div> */}
-            {!compact && <p className="text-white/40 text-xs mt-1">Tap each sound for details</p>}
-          </div>
-      )}
 
-        {/* Nút điều khiển */}
-      {(errorMsg || (!compact && lookupNote && phase === 'ready') || (isResolvingPhonemes && phase === 'ready')) && (
-        <div className={`px-4 pb-3 flex flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
-          {errorMsg && (
-            <div className="bg-red-500/15 border border-red-500/40 rounded-2xl px-4 py-3 flex items-start gap-3">
-              <span className="text-red-400 text-lg mt-0.5">!</span>
-              <p className="text-red-300 text-sm leading-relaxed">{errorMsg}</p>
-            </div>
-          )}
-          {!compact && lookupNote && phase === 'ready' && (
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3">
-              <p className="text-amber-200 text-sm leading-relaxed">{lookupNote}</p>
-            </div>
-          )}
-          {isResolvingPhonemes && phase === 'ready' && (
-            <div className="w-full rounded-2xl py-3 bg-white/5 border border-white/10 text-white/50 flex items-center justify-center gap-2">
-              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
-              Resolving IPA for this word...
-            </div>
-          )}
-        </div>
-      )}
+        {/* NÃºt Ä‘iá»u khiá»ƒn */}
+      <PracticeStatusMessages
+        compact={compact}
+        errorMsg={errorMsg}
+        lookupNote={lookupNote}
+        phase={phase}
+        isResolvingPhonemes={isResolvingPhonemes}
+      />
 
-      {(learnedControl || navButtons || onDictionary || (onSearchWord && !compact)) && (
-        <div className={`px-4 pb-4 flex flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
-          {learnedControl && (
-            <button
-              type="button"
-              onClick={toggleLearnedControl}
-              className={`w-full rounded-2xl ${compact ? 'py-2 text-base' : 'py-5 text-lg'} flex items-center justify-center gap-3 font-bold border transition-transform active:scale-95 ${learnedControl.checked ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200' : 'bg-white/5 border-white/10 text-white/75'}`}
-            >
-              <span className={`w-6 h-6 rounded-md border flex items-center justify-center ${learnedControl.checked ? 'bg-emerald-400 border-emerald-300 text-gray-950' : 'border-white/30 text-transparent'}`}>✓</span>
-              Done
-            </button>
-          )}
-
-          {navButtons}
-
-          {onDictionary && (
-            <button
-              type="button"
-              onClick={onDictionary}
-              className={`w-full rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-200 ${compact ? 'py-2 text-xs' : 'py-3 text-sm'} flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform`}
-              aria-label="Open dictionary search"
-            >
-              <Search size={compact ? 14 : 16} />
-              Search in Dictionary
-            </button>
-          )}
-
-          {onSearchWord && !compact && (
-            <form onSubmit={e => { e.preventDefault(); const w = searchVal.trim(); if (w) { onSearchWord(w); setSearchVal('') } }}
-              className="flex gap-2 pt-1 border-t border-white/10 mt-1">
-              <div className="flex-1 relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-                <input
-                  value={searchVal}
-                  onChange={e => setSearchVal(e.target.value)}
-                  placeholder="Practice another word..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-white/25"
-                />
-              </div>
-              <button type="submit"
-                className="bg-blue-600/80 hover:bg-blue-500 text-white rounded-xl px-4 text-sm font-semibold transition-colors active:scale-95">
-                Search
-              </button>
-            </form>
-          )}
-        </div>
-      )}
-
-      <div className={`fixed left-1/2 bottom-[4.75rem] z-30 w-full max-w-sm -translate-x-1/2 px-4 pt-3 pb-3 flex flex-col ${compact ? 'gap-2' : 'gap-3'} rounded-t-[2rem] bg-gradient-to-t from-[#0f0f1a] via-[#0f0f1a]/95 to-transparent`}>
-
-        {false && errorMsg && (
-          <div className="bg-red-500/15 border border-red-500/40 rounded-2xl px-4 py-3 flex items-start gap-3">
-            <span className="text-red-400 text-lg mt-0.5">⚠️</span>
-            <p className="text-red-300 text-sm leading-relaxed">{errorMsg}</p>
-          </div>
-        )}
-
-        {false && !compact && lookupNote && phase === 'ready' && (
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3">
-            <p className="text-amber-200 text-sm leading-relaxed">{lookupNote}</p>
-          </div>
-        )}
-
-        {false && isResolvingPhonemes && phase === 'ready' && (
-          <div className="w-full rounded-2xl py-3 bg-white/5 border border-white/10 text-white/50 flex items-center justify-center gap-2">
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
-            Resolving IPA for this word...
-          </div>
-        )}
-
-        {/* Nghe mẫu — trên cùng khi ready/recording */}
-        {(phase === 'ready' || phase === 'recording') && (
-          <button onClick={playModel} className={`w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
-            <Volume2 size={18} />
-            Model Audio
-          </button>
-        )}
-
-        {/* Scoring phase */}
-        {phase === 'scoring' && (
-          <>
-            {recordingUrl && (
-              <button onClick={playbackRecording}
-                className={`w-full rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform border ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}>
-                {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
-                {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
-              </button>
-            )}
-            <div className="w-full rounded-2xl py-3 bg-white/5 border border-white/10 text-white/50 flex items-center justify-center gap-2">
-              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
-              Analyzing pronunciation...
-            </div>
-            <button onClick={reset} className={`order-last w-full bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-red-900/30`}>
-              <Mic size={18} />
-              Retry
-            </button>
-          </>
-        )}
-
-        {/* Result phase */}
-        {phase === 'result' && (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={playModel} className={`w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform`}>
-                <Volume2 size={16} />
-                Model Audio
-              </button>
-              <button onClick={playbackRecording} disabled={!recordingUrl}
-                className={`w-full rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform border disabled:opacity-40 ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}>
-                {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
-                {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
-              </button>
-            </div>
-            <button onClick={resetAndRecord} className={`order-last w-full bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-2xl ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-red-900/30`}>
-              <Mic size={18} />
-              Retry
-            </button>
-            {source === 'sentence-word' && onBack && (
-              <button
-                type="button"
-                onClick={onBack}
-                className={`w-full rounded-2xl bg-emerald-500/20 border border-emerald-400/35 text-emerald-100 ${compact ? 'py-1.5 text-sm' : 'py-3'} flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform`}
-              >
-                <ChevronLeft size={16} />
-                Quay lại câu đang học
-              </button>
-            )}
-          </>
-        )}
-
-        {/* Nút ghi âm lớn — luôn ở cuối cùng */}
-        {phase === 'ready' && (
-          <button onClick={startRecording} disabled={!canScoreWord || isResolvingPhonemes}
-            className={`order-last w-full rounded-2xl ${compact ? 'py-2 text-base' : 'py-6 text-xl'} flex items-center justify-center gap-3 font-bold transition-transform shadow-lg ${
-              canScoreWord && !isResolvingPhonemes
-                ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white active:scale-95 shadow-red-900/30'
-                : 'bg-white/5 border border-white/10 text-white/25 cursor-not-allowed shadow-none'
-            }`}>
-            <Mic size={28} />
-            {isResolvingPhonemes ? 'Resolving IPA...' : canScoreWord ? `Speak (${recordingDuration}s)` : 'Cannot score this word'}
-          </button>
-        )}
-        {phase === 'recording' && (
-          <button onClick={stopRecording}
-            className={`order-last w-full bg-red-600/20 border-2 border-red-500/50 rounded-2xl ${compact ? 'py-2 text-base' : 'py-6'} flex items-center justify-center gap-3 text-red-400 active:scale-95 transition-transform`}>
-            <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
-            <span className="font-bold text-xl">Speaking...</span>
-            <span className="font-bold tabular-nums text-red-300 text-2xl">{countdown}s</span>
-          </button>
-        )}
-
-        {false && learnedControl && (
-          <button
-            type="button"
-            onClick={toggleLearnedControl}
-            className={`w-full rounded-2xl ${compact ? 'py-2 text-base' : 'py-5 text-lg'} flex items-center justify-center gap-3 font-bold border transition-transform active:scale-95 ${learnedControl.checked ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200' : 'bg-white/5 border-white/10 text-white/75'}`}
-          >
-            <span className={`w-6 h-6 rounded-md border flex items-center justify-center ${learnedControl.checked ? 'bg-emerald-400 border-emerald-300 text-gray-950' : 'border-white/30 text-transparent'}`}>✓</span>
-            Done
-          </button>
-        )}
-
-        {false && navButtons}
-
-        {false && onDictionary && (
-          <button
-            type="button"
-            onClick={onDictionary}
-            className={`w-full rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-200 ${compact ? 'py-2 text-xs' : 'py-3 text-sm'} flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform`}
-            aria-label="Mở Dictionary để tìm từ"
-          >
-            <Search size={compact ? 14 : 16} />
-            Search in Dictionary
-          </button>
-        )}
-
-        {/* Ô tìm kiếm — luôn hiển thị khi có callback */}
-        {false && onSearchWord && !compact && (
-          <form onSubmit={e => { e.preventDefault(); const w = searchVal.trim(); if (w) { onSearchWord(w); setSearchVal('') } }}
-            className="flex gap-2 pt-1 border-t border-white/10 mt-1">
-            <div className="flex-1 relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-              <input
-                value={searchVal}
-                onChange={e => setSearchVal(e.target.value)}
-                placeholder="Practice another word..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm placeholder-white/25 focus:outline-none focus:border-white/25"
-              />
-            </div>
-            <button type="submit"
-              className="bg-blue-600/80 hover:bg-blue-500 text-white rounded-xl px-4 text-sm font-semibold transition-colors active:scale-95">
-              Search
-            </button>
-          </form>
-        )}
-
-      </div>
+      <PracticeNavigationActions
+        compact={compact}
+        learnedControl={learnedControl}
+        onToggleLearned={toggleLearnedControl}
+        navButtons={navButtons}
+        onDictionary={onDictionary}
+        onSearchWord={onSearchWord}
+        searchVal={searchVal}
+        setSearchVal={setSearchVal}
+      />
+      <RecordingConsole
+        compact={compact}
+        phase={phase}
+        playModel={playModel}
+        recordingUrl={recordingUrl}
+        playbackRecording={playbackRecording}
+        isPlayingBack={isPlayingBack}
+        reset={reset}
+        resetAndRecord={resetAndRecord}
+        source={source}
+        onBack={onBack}
+        startRecording={startRecording}
+        canScoreWord={canScoreWord}
+        isResolvingPhonemes={isResolvingPhonemes}
+        recordingDuration={recordingDuration}
+        countdown={countdown}
+        stopRecording={stopRecording}
+      />
     </div>
   )
 }
 
-// ─── SCREENS ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ SCREENS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const LANG_CONFIG = {
-  en: { label: '🇺🇸 EN', sounds: SOUNDS,        vowelGroups: VOWEL_GROUPS,          consonantGroups: CONSONANT_GROUPS,         azureCode: 'en-US', subtitle: '48 âm chuẩn tiếng Anh' },
-  es: { label: '🇪🇸 ES', sounds: SPANISH_SOUNDS, vowelGroups: SPANISH_VOWEL_GROUPS,  consonantGroups: SPANISH_CONSONANT_GROUPS, azureCode: 'es-ES', subtitle: 'Tiếng Tây Ban Nha' },
-  it: { label: '🇮🇹 IT', sounds: ITALIAN_SOUNDS, vowelGroups: ITALIAN_VOWEL_GROUPS,  consonantGroups: ITALIAN_CONSONANT_GROUPS, azureCode: 'it-IT', subtitle: 'Tiếng Ý' },
-  fr: { label: '🇫🇷 FR', sounds: FRENCH_SOUNDS,  vowelGroups: FRENCH_VOWEL_GROUPS,   consonantGroups: FRENCH_CONSONANT_GROUPS,  azureCode: 'fr-FR', subtitle: 'Tiếng Pháp' },
-}
-
-const AZURE_TO_LANGUAGE = { 'en-US': 'english', 'es-ES': 'spanish', 'it-IT': 'italian', 'fr-FR': 'french' }
-const LANGUAGE_TO_AZURE = { english: 'en-US', spanish: 'es-ES', italian: 'it-IT', french: 'fr-FR' }
-const LANGUAGE_TO_APP_LANG = { english: 'en', spanish: 'es', italian: 'it', french: 'fr' }
-const LANGUAGE_LABEL = { english: 'English', spanish: 'Spanish', italian: 'Italian', french: 'French' }
-const LANGUAGE_FLAG = { english: '🇺🇸', spanish: '🇪🇸', italian: '🇮🇹', french: '🇫🇷' }
-const LANGUAGE_SHORT = { english: 'EN', spanish: 'ES', italian: 'IT', french: 'FR' }
-const DICTIONARY_LANGUAGES = ['english', 'spanish', 'italian', 'french']
-
-function AzureUsageBadge() {
-  const { used, total, pct, usedLabel } = getAzureUsageSummary()
-  const color = pct >= 90 ? 'text-red-400' : pct >= 70 ? 'text-yellow-400' : 'text-emerald-400'
-  const barColor = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-emerald-500'
-  return (
-    <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-1.5">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-white/40 text-xs">Azure</span>
-          <span className={`text-xs font-semibold ${color}`}>{usedLabel} đã dùng</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-white/30 text-[11px]">Tháng này</span>
-          <span className="text-white/50 text-[11px]">{used.toFixed(2)}h / {total}h free</span>
-        </div>
-        <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-    </div>
-  )
+  en: { label: 'ðŸ‡ºðŸ‡¸ EN', sounds: SOUNDS,        vowelGroups: VOWEL_GROUPS,          consonantGroups: CONSONANT_GROUPS,         azureCode: 'en-US', subtitle: '48 Ã¢m chuáº©n tiáº¿ng Anh' },
+  es: { label: 'ðŸ‡ªðŸ‡¸ ES', sounds: SPANISH_SOUNDS, vowelGroups: SPANISH_VOWEL_GROUPS,  consonantGroups: SPANISH_CONSONANT_GROUPS, azureCode: 'es-ES', subtitle: 'Tiáº¿ng TÃ¢y Ban Nha' },
+  it: { label: 'ðŸ‡®ðŸ‡¹ IT', sounds: ITALIAN_SOUNDS, vowelGroups: ITALIAN_VOWEL_GROUPS,  consonantGroups: ITALIAN_CONSONANT_GROUPS, azureCode: 'it-IT', subtitle: 'Tiáº¿ng Ã' },
+  fr: { label: 'ðŸ‡«ðŸ‡· FR', sounds: FRENCH_SOUNDS,  vowelGroups: FRENCH_VOWEL_GROUPS,   consonantGroups: FRENCH_CONSONANT_GROUPS,  azureCode: 'fr-FR', subtitle: 'Tiáº¿ng PhÃ¡p' },
 }
 
 function SoundLibraryScreen({ lang, onSelectSound, onGoDict, onChangeLang }) {
@@ -2136,8 +1536,8 @@ function SoundLibraryScreen({ lang, onSelectSound, onGoDict, onChangeLang }) {
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2.5 rounded-2xl font-semibold text-sm transition-all ${tab === t ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}>
             {t === 'vowels'
-              ? `Nguyên Âm (${cfg.sounds.filter(s=>s.type==='vowel').length})`
-              : `Phụ Âm (${cfg.sounds.filter(s=>s.type==='consonant').length})`}
+              ? `NguyÃªn Ã‚m (${cfg.sounds.filter(s=>s.type==='vowel').length})`
+              : `Phá»¥ Ã‚m (${cfg.sounds.filter(s=>s.type==='consonant').length})`}
           </button>
         ))}
       </div>
@@ -2150,7 +1550,7 @@ function SoundLibraryScreen({ lang, onSelectSound, onGoDict, onChangeLang }) {
           <div key={g.key} className="mb-6">
             <div className="px-4 mb-3 flex items-center gap-2">
               <span className="text-white/80 font-semibold text-sm">{g.label}</span>
-              <span className="text-white/30 text-xs">{groupSounds.length} âm</span>
+              <span className="text-white/30 text-xs">{groupSounds.length} Ã¢m</span>
             </div>
             <div className="px-4 grid grid-cols-4 gap-2">
               {groupSounds.map(s => (
@@ -2192,7 +1592,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
             <Volume2 size={26} className="text-white" />
           </button>
         </div>
-        {sound.hard && <span className="inline-block bg-yellow-400/20 border border-yellow-400/40 text-yellow-300 text-xs rounded-lg px-2 py-0.5">★ Khó với người Việt</span>}
+        {sound.hard && <span className="inline-block bg-yellow-400/20 border border-yellow-400/40 text-yellow-300 text-xs rounded-lg px-2 py-0.5">â˜… KhÃ³ vá»›i ngÆ°á»i Viá»‡t</span>}
         <div className="mt-4 bg-white/10 rounded-2xl p-3">
           <p className="text-white/90 text-sm leading-relaxed">{sound.tip}</p>
         </div>
@@ -2201,7 +1601,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
       {/* Learn more links (English only) */}
       {lang === 'en' && (
         <div className="px-4 mb-6">
-          <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Học thêm</div>
+          <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Há»c thÃªm</div>
           <div className="flex flex-col gap-2">
             {RACHEL_URLS[sound.ipa] && (
               <a href={RACHEL_URLS[sound.ipa]} target="_blank" rel="noopener noreferrer"
@@ -2211,7 +1611,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
                 </div>
                 <div className="flex-1 text-left">
                   <div className="text-white/80 text-sm font-medium">Rachel's English</div>
-                  <div className="text-white/40 text-xs">Hướng dẫn chi tiết âm /{sound.ipa}/</div>
+                  <div className="text-white/40 text-xs">HÆ°á»›ng dáº«n chi tiáº¿t Ã¢m /{sound.ipa}/</div>
                 </div>
                 <ExternalLink size={14} className="text-white/30" />
               </a>
@@ -2222,8 +1622,8 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
                 <Play size={14} className="text-red-400 fill-red-400" />
               </div>
               <div className="flex-1 text-left">
-                <div className="text-white/80 text-sm font-medium">YouTube — Rachel's English</div>
-                <div className="text-white/40 text-xs">Video hướng dẫn âm {sound.label}</div>
+                <div className="text-white/80 text-sm font-medium">YouTube â€” Rachel's English</div>
+                <div className="text-white/40 text-xs">Video hÆ°á»›ng dáº«n Ã¢m {sound.label}</div>
               </div>
               <ExternalLink size={14} className="text-white/30" />
             </a>
@@ -2233,7 +1633,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
 
       {/* Practice words */}
       <div className="px-4">
-        <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Luyện tập với từ</div>
+        <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Luyá»‡n táº­p vá»›i tá»«</div>
         <div className="flex flex-col gap-3">
           {sound.words.map((w, idx) => (
             <button key={w.word} onClick={() => onPracticeWord(w, idx)}
@@ -2246,7 +1646,7 @@ function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
                 <button onClick={e => { e.stopPropagation(); speakNeural(w.word, azureCode) }} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
                   <Volume2 size={14} className="text-white/60" />
                 </button>
-                <div className="text-white/20 text-lg">›</div>
+                <div className="text-white/20 text-lg">â€º</div>
               </div>
             </button>
           ))}
@@ -2306,177 +1706,6 @@ function PracticeWordScreen({ word, meaning, lang, prebuiltPhonemes, strictLooku
       <PronunciationPractice key={`${word}:${effectiveLang}`} word={word} meaning={effectiveMeaning} lang={effectiveLang} prebuiltPhonemes={effectivePhonemes} strictLookup={strictLookup} detail={practiceDetail} source={effectiveSource} onBack={onBack} onHome={onHome} onLibrary={onLibrary} onDictionary={onDictionary} onNext={onNext} onPrev={onPrev} onSearchWord={onSearchWord} onScoreResult={(result) => onScoreResult?.(result, { language: effectiveLanguage, azureLanguage: effectiveLang })} practiceSettings={practiceSettings} recordingDurationSetting={recordingDurationSetting} />
     </div>
   )
-}
-
-const COMMON_3000_LEARNED_KEY = 'common3000LearnedWords'
-const COMMON_3000_SCORES_KEY = 'common3000LearnedScores'
-
-function loadLearnedCommonWords() {
-  try {
-    const raw = localStorage.getItem(COMMON_3000_LEARNED_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return new Set(Array.isArray(parsed) ? parsed : [])
-  } catch {
-    return new Set()
-  }
-}
-
-function saveLearnedCommonWords(words) {
-  localStorage.setItem(COMMON_3000_LEARNED_KEY, JSON.stringify([...words].sort()))
-}
-
-function loadCommonWordScores() {
-  try {
-    const raw = localStorage.getItem(COMMON_3000_SCORES_KEY)
-    const parsed = raw ? JSON.parse(raw) : {}
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function saveCommonWordScores(scores) {
-  localStorage.setItem(COMMON_3000_SCORES_KEY, JSON.stringify(scores))
-}
-
-function isUsefulWordMeaning(item) {
-  const meaning = item?.meaningVi || ''
-  const definition = item?.definitionEn || ''
-  return Boolean(meaning)
-    && !/^Một .+ tiếng Anh thông dụng\./i.test(meaning)
-    && !/^Một .+ thông dụng trong tiếng Anh\./i.test(meaning)
-    && !/^A common English /i.test(definition)
-}
-
-function practiceExampleForLanguage(word, language = 'english') {
-  switch (normalizeLanguage(language)) {
-    case 'spanish': return `Puedo decir "${word}" claramente.`
-    case 'italian': return `Posso dire "${word}" chiaramente.`
-    case 'french': return `Je peux dire "${word}" clairement.`
-    default: return `I can say "${word}" clearly.`
-  }
-}
-
-function practiceExampleTranslationForLanguage(word, language = 'english') {
-  switch (normalizeLanguage(language)) {
-    case 'spanish':
-    case 'italian':
-    case 'french':
-      return `Tôi có thể nói "${word}" rõ ràng.`
-    default:
-      return `Tôi có thể nói "${word}" rõ ràng.`
-  }
-}
-
-function buildTranslateFallbackDetail(word, meaning = '', language = 'english') {
-  const cleanMeaning = meaning && !/^\d+\/\d+/.test(meaning) ? meaning : 'Google Translate available'
-  const example = practiceExampleForLanguage(word, language)
-  return {
-    word,
-    level: null,
-    language: normalizeLanguage(language),
-    meanings: [
-      {
-        pos: 'translate',
-        definitionEn: '',
-        meaningVi: 'Use Google Translate to view the Vietnamese meaning.',
-        exampleEn: `Translate: ${word}`,
-        exampleVi: 'No local usage example is available yet.',
-      },
-      {
-        pos: word.includes(' ') ? 'phrase' : 'word',
-        definitionEn: `A practice ${word.includes(' ') ? 'phrase' : 'word'} used in pronunciation training.`,
-        meaningVi: cleanMeaning,
-        exampleEn: example,
-        exampleVi: practiceExampleTranslationForLanguage(word, language),
-      },
-    ],
-  }
-}
-
-function supabaseWordToEntry(row) {
-  return {
-    id: row.id,
-    word: row.word,
-    level: row.level || row.categories?.level || 'A1',
-    pos: row.type || 'other',
-    categoryId: row.category_id || null,
-    categoryName: row.categories?.name || null,
-    ipa: row.ipa || null,
-    meaningVi: row.vietnamese_definition || '',
-    exampleEn: row.example_sentence || '',
-    rootWord: row.root_word || '',
-    familyWords: row.family_words || [],
-    synonyms: row.synonyms || [],
-    antonyms: row.antonyms || [],
-    language: row.language || 'english',
-  }
-}
-
-function buildSupabaseWordDetail(entry) {
-  const language = normalizeLanguage(entry.language)
-  return {
-    word: entry.word,
-    level: entry.level,
-    ipa: entry.ipa || null,
-    language,
-    meanings: [
-      {
-        pos: entry.pos || 'word',
-        definitionEn: entry.categoryName ? `Category: ${entry.categoryName}` : '',
-        meaningVi: entry.meaningVi || 'Google Translate available',
-        exampleEn: entry.exampleEn || practiceExampleForLanguage(entry.word, language),
-        exampleVi: '',
-      },
-    ],
-    relations: {
-      rootWord: entry.rootWord || '',
-      family: uniqueList([entry.rootWord, ...(entry.familyWords || [])]).slice(0, 8),
-      synonyms: uniqueList(entry.synonyms || []).slice(0, 8),
-      antonyms: uniqueList(entry.antonyms || []).slice(0, 8),
-    },
-  }
-}
-
-function dictionaryWordKey(word, language = 'english') {
-  return `${normalizeLanguage(language)}:${String(word || '').trim().toLowerCase()}`
-}
-
-const DICTIONARY_CACHE_KEY = 'dictionaryWordsCacheV3'
-const DICTIONARY_CATEGORIES_CACHE_KEY = 'dictionaryCategoriesCacheV3'
-const DICTIONARY_PAGE_SIZE = 150
-const dictionaryMemoryCache = new Map()
-
-function loadDictionaryCache(key) {
-  try {
-    if (dictionaryMemoryCache.has(key)) return dictionaryMemoryCache.get(key)
-    const parsed = JSON.parse(localStorage.getItem(key) || 'null')
-    if (!parsed || !Array.isArray(parsed.items)) return null
-    dictionaryMemoryCache.set(key, parsed)
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function saveDictionaryCache(key, items) {
-  try {
-    const safeItems = items.map(({ sourceRow, ...item }) => item)
-    const payload = { updatedAt: new Date().toISOString(), items: safeItems }
-    dictionaryMemoryCache.set(key, payload)
-    localStorage.setItem(key, JSON.stringify(payload))
-  } catch {}
-}
-
-function searchDictionaryEntries(entries, term, language = 'all') {
-  const q = String(term || '').trim().toLowerCase()
-  if (!q) return []
-  return entries.filter(entry => {
-    if (language !== 'all' && normalizeLanguage(entry.language) !== normalizeLanguage(language)) return false
-    return entry.word.toLowerCase().includes(q)
-      || entry.meaningVi.toLowerCase().includes(q)
-      || entry.rootWord.toLowerCase().includes(q)
-  })
 }
 
 function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, learnedCommonWords, commonWordScores, onToggleCommonLearned, onPronunciationResult }) {
@@ -2676,7 +1905,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       const firstLang = langsToSearch[0]
       setSearchResult({
         word: term,
-        meaning: 'Chưa có trong từ điển',
+        meaning: 'ChÆ°a cÃ³ trong tá»« Ä‘iá»ƒn',
         language: firstLang,
         source: 'external'
       })
@@ -2710,7 +1939,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       const text = await fetchVietnameseTranslation(word, language)
       setCommonTranslations(prev => ({ ...prev, [key]: { text, loading: false, error: null } }))
     } catch (err) {
-      setCommonTranslations(prev => ({ ...prev, [key]: { text: '', loading: false, error: err.message || 'Không dịch tự động được.' } }))
+      setCommonTranslations(prev => ({ ...prev, [key]: { text: '', loading: false, error: err.message || 'KhÃ´ng dá»‹ch tá»± Ä‘á»™ng Ä‘Æ°á»£c.' } }))
     }
   }
 
@@ -2747,7 +1976,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       setMeaningUpdates(prev => ({ ...prev, [key]: { loading: false, error: null, text: fields.vietnamese_definition, type } }))
       return fields.vietnamese_definition
     } catch (err) {
-      const message = err.message || 'Không cập nhật nghĩa được.'
+      const message = err.message || 'KhÃ´ng cáº­p nháº­t nghÄ©a Ä‘Æ°á»£c.'
       setMeaningUpdates(prev => ({ ...prev, [key]: { loading: false, error: message, text: '', type } }))
       throw new Error(message)
     }
@@ -2798,7 +2027,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
       if (!nextEntry) return
       const nextDetail = nextEntry.detail || buildSupabaseWordDetail(nextEntry)
       openWord(nextEntry.word, {
-        meaning: nextDetail.meanings?.[0]?.meaningVi || `${nextEntry.level} · ${nextEntry.pos}`,
+        meaning: nextDetail.meanings?.[0]?.meaningVi || `${nextEntry.level} Â· ${nextEntry.pos}`,
         strictLookup: true,
         source: 'common',
         entry: nextEntry,
@@ -2832,7 +2061,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           key={`${activeWord.word}:${activeAzureCode}`}
           word={activeWord.word}
           meaning={activeWord.meaning}
-          metaLine={isCommonWord ? `${commonIndex + 1}/${commonList.length}${commonEntry ? ` · ${commonEntry.level} · ${commonEntry.pos} · ${LANGUAGE_SHORT[activeLanguage]}` : ''}` : null}
+          metaLine={isCommonWord ? `${commonIndex + 1}/${commonList.length}${commonEntry ? ` Â· ${commonEntry.level} Â· ${commonEntry.pos} Â· ${LANGUAGE_SHORT[activeLanguage]}` : ''}` : null}
           lang={activeAzureCode}
           prebuiltPhonemes={activePhonemes}
           strictLookup={activeWord.strictLookup}
@@ -2868,8 +2097,8 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
       <div className="px-4 pt-10 pb-4">
-        <h1 className="text-2xl font-bold text-white">Từ Điển Phát Âm</h1>
-        {showDictionarySearch && <p className="text-white/40 text-sm">Nhập từ để chẩn đoán phát âm</p>}
+        <h1 className="text-2xl font-bold text-white">Tá»« Äiá»ƒn PhÃ¡t Ã‚m</h1>
+        {showDictionarySearch && <p className="text-white/40 text-sm">Nháº­p tá»« Ä‘á»ƒ cháº©n Ä‘oÃ¡n phÃ¡t Ã¢m</p>}
       </div>
       {showDictionarySearch && (
         <>
@@ -2881,7 +2110,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                   ref={inputRef}
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="Nhập từ cần tra..."
+                  placeholder="Nháº­p tá»« cáº§n tra..."
                   className="w-full bg-white/5 border border-white/10 rounded-2xl pl-11 pr-4 py-3.5 text-white placeholder-white/30 focus:outline-none focus:border-white/30"
                 />
               </div>
@@ -2915,9 +2144,9 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-white font-semibold flex items-center gap-2">
                   <Search size={16} className="text-blue-400" />
-                  Kết quả tìm kiếm
+                  Káº¿t quáº£ tÃ¬m kiáº¿m
                 </h2>
-                <button onClick={() => setSearchResult(null)} className="text-[10px] text-white/40 hover:text-white/60">Xóa</button>
+                <button onClick={() => setSearchResult(null)} className="text-[10px] text-white/40 hover:text-white/60">XÃ³a</button>
               </div>
               <button
                 onClick={() => openWord(searchResult.word, {
@@ -2938,9 +2167,9 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                     <div className="text-white/60 text-sm italic line-clamp-2">{searchResult.meaning}</div>
                     <div className="mt-3 flex items-center gap-2">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${searchResult.source === 'common' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
-                        {searchResult.source === 'common' ? 'Trong thư viện' : 'Tìm thấy bên ngoài'}
+                        {searchResult.source === 'common' ? 'Trong thÆ° viá»‡n' : 'TÃ¬m tháº¥y bÃªn ngoÃ i'}
                       </span>
-                      <span className="text-[10px] text-white/30">Chạm để luyện phát âm →</span>
+                      <span className="text-[10px] text-white/30">Cháº¡m Ä‘á»ƒ luyá»‡n phÃ¡t Ã¢m â†’</span>
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center text-blue-300 group-hover:bg-blue-500 group-hover:text-white transition-all shadow-lg shadow-blue-900/20">
@@ -2957,17 +2186,17 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
         <div className="flex items-end justify-between gap-3 mb-3">
           <div>
             <h2 className="text-white font-semibold">Supabase Vocabulary</h2>
-            <p className="text-white/40 text-xs">Dữ liệu từ bảng words/categories</p>
+            <p className="text-white/40 text-xs">Dá»¯ liá»‡u tá»« báº£ng words/categories</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div className="text-white/35 text-xs">{visibleCommonWords.length}/{filteredCommonWords.length} từ</div>
+            <div className="text-white/35 text-xs">{visibleCommonWords.length}/{filteredCommonWords.length} tá»«</div>
             <button
               type="button"
               onClick={() => refreshDictionary()}
               disabled={supabaseLoading}
               className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold text-white/55 disabled:opacity-40"
             >
-              Tải lại
+              Táº£i láº¡i
             </button>
           </div>
         </div>
@@ -2977,7 +2206,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           <input
             value={commonQuery}
             onChange={e => setCommonQuery(e.target.value)}
-            placeholder="Tìm từ trong Supabase..."
+            placeholder="TÃ¬m tá»« trong Supabase..."
             className="w-full bg-white/5 border border-white/10 rounded-2xl pl-9 pr-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30 text-sm"
           />
         </div>
@@ -2987,7 +2216,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
             onClick={() => setCommonLanguage('all')}
             className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${commonLanguage === 'all' ? 'bg-white text-gray-950 border-white' : 'bg-white/5 text-white/60 border-white/10'}`}
           >
-            🌐 Tất cả
+            ðŸŒ Táº¥t cáº£
           </button>
           {DICTIONARY_LANGUAGES.map(lang => (
             <button
@@ -3001,28 +2230,8 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           ))}
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-3">
-          <button
-            onClick={() => setCommonLevel('all')}
-            className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${commonLevel === 'all' ? 'bg-white text-gray-950 border-white' : 'bg-white/5 text-white/60 border-white/10'}`}
-          >
-            Tất cả
-          </button>
-          {supabaseLevels.map(level => (
-            <button
-              key={level}
-              onClick={() => setCommonLevel(level)}
-              className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${commonLevel === level ? 'bg-white text-gray-950 border-white' : 'bg-white/5 text-white/60 border-white/10'}`}
-            >
-              {level}
-            </button>
-          ))}
-          <button
-            onClick={() => setCommonLevel('none')}
-            className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold border transition-colors ${commonLevel === 'none' ? 'bg-white text-gray-950 border-white' : 'bg-white/5 text-white/60 border-white/10'}`}
-          >
-            Chưa có level
-          </button>
+        <div className="pb-3">
+          <LevelCombobox value={commonLevel} onChange={setCommonLevel} levels={supabaseLevels} />
         </div>
 
         <select
@@ -3030,10 +2239,10 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
           onChange={e => setCommonCategory(e.target.value)}
           className="w-full mb-3 bg-white/5 border border-white/10 rounded-2xl px-3 py-3 text-white focus:outline-none focus:border-white/30 text-sm"
         >
-          <option value="all">Tất cả chủ đề</option>
+          <option value="all">Táº¥t cáº£ chá»§ Ä‘á»</option>
           {supabaseCategories.map(category => (
             <option key={category.id} value={category.id}>
-              {category.level ? `${category.level} · ` : ''}{category.name}
+              {category.level ? `${category.level} Â· ` : ''}{category.name}
             </option>
           ))}
         </select>
@@ -3046,22 +2255,22 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
 
         {supabaseLoading && (
           <div className="mb-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/50 text-sm">
-            {supabaseWords.length > 0 ? 'Đang cập nhật dữ liệu nền...' : 'Đang tải từ Supabase...'}
+            {supabaseWords.length > 0 ? 'Äang cáº­p nháº­t dá»¯ liá»‡u ná»n...' : 'Äang táº£i tá»« Supabase...'}
           </div>
         )}
 
         {!supabaseLoading && dictionaryCachedAt && (
           <div className="mb-3 text-[11px] text-white/30">
             Cache local: {new Date(dictionaryCachedAt).toLocaleString()}
-            {commonQuery !== deferredCommonQuery ? ' · đang lọc...' : ''}
+            {commonQuery !== deferredCommonQuery ? ' Â· Ä‘ang lá»c...' : ''}
           </div>
         )}
 
         <div className="flex gap-2 overflow-x-auto pb-3">
           {[
-            ['all', `Tất cả · ${levelScopedCommonWords.length}`],
-            ['unlearned', `Chưa học · ${scopedUnlearnedCount}`],
-            ['learned', `Đã học · ${scopedLearnedCount}`],
+            ['all', `Táº¥t cáº£ Â· ${levelScopedCommonWords.length}`],
+            ['unlearned', `ChÆ°a há»c Â· ${scopedUnlearnedCount}`],
+            ['learned', `ÄÃ£ há»c Â· ${scopedLearnedCount}`],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -3094,7 +2303,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                 <button
                   type="button"
                   onClick={() => openWord(entry.word, {
-                meaning: firstMeaning?.meaningVi || `${entry.level} · ${entry.pos}`,
+                meaning: firstMeaning?.meaningVi || `${entry.level} Â· ${entry.pos}`,
                     strictLookup: true,
                     source: 'common',
                     entry,
@@ -3108,7 +2317,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                     <span className="shrink-0 text-base leading-none" title={entry.language || 'english'}>{LANGUAGE_FLAG[entry.language || 'english']}</span>
                     <span className="text-white text-sm font-medium">{entry.word}</span>
                     {entry.ipa && <span className="shrink-0 text-white/35 font-mono text-[11px]">/{entry.ipa}/</span>}
-                    {isLearned && <span className="shrink-0 text-emerald-300 text-xs">✓</span>}
+                    {isLearned && <span className="shrink-0 text-emerald-300 text-xs">âœ“</span>}
                     {Number.isFinite(savedScore) && (
                       <span className={`shrink-0 text-[10px] leading-none rounded px-1.5 py-1 border ${savedScore >= 85 ? 'text-emerald-200 border-emerald-400/30 bg-emerald-500/10' : savedScore >= 65 ? 'text-yellow-200 border-yellow-400/30 bg-yellow-500/10' : 'text-red-200 border-red-400/30 bg-red-500/10'}`}>
                         {savedScore}%
@@ -3119,7 +2328,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-white/35 text-xs">
                     <span>
                       {firstMeaning?.meaningVi || entry.pos}
-                      {entry.categoryName ? ` · ${entry.categoryName}` : ''}
+                      {entry.categoryName ? ` Â· ${entry.categoryName}` : ''}
                     </span>
                     {showRefreshMeaningAction && (
                       <>
@@ -3137,13 +2346,13 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                             updateMeaningFromWeb(entry.word, entry.pos, entry.language).catch(() => {})
                           }}
                           className={`inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold ${meaningUpdate?.loading ? 'border-white/10 bg-white/5 text-white/35' : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200'}`}
-                          aria-label={`Tự tìm và cập nhật dữ liệu cho ${entry.word}`}
+                          aria-label={`Tá»± tÃ¬m vÃ  cáº­p nháº­t dá»¯ liá»‡u cho ${entry.word}`}
                         >
                           <Pencil size={10} />
-                          {meaningUpdate?.loading ? 'Đang cập nhật' : 'Sửa nghĩa'}
+                          {meaningUpdate?.loading ? 'Äang cáº­p nháº­t' : 'Sá»­a nghÄ©a'}
                         </span>
                         {meaningUpdate?.error && <span className="text-red-200">{meaningUpdate.error}</span>}
-                        {meaningUpdate?.text && !meaningUpdate.loading && !meaningUpdate.error && <span className="text-emerald-200">Đã cập nhật theo {meaningUpdate.type || entry.pos}</span>}
+                        {meaningUpdate?.text && !meaningUpdate.loading && !meaningUpdate.error && <span className="text-emerald-200">ÄÃ£ cáº­p nháº­t theo {meaningUpdate.type || entry.pos}</span>}
                       </>
                     )}
                   </div>
@@ -3158,7 +2367,7 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
                       }
                     }}
                     className="w-12 shrink-0 border-l border-white/10 text-white/65 flex items-center justify-center rounded-r-xl hover:bg-white/10 active:scale-95 transition-transform"
-                    aria-label={isExpanded ? 'Thu gọn nghĩa và ví dụ' : 'Mở rộng nghĩa và ví dụ'}
+                    aria-label={isExpanded ? 'Thu gá»n nghÄ©a vÃ  vÃ­ dá»¥' : 'Má»Ÿ rá»™ng nghÄ©a vÃ  vÃ­ dá»¥'}
                   >
                     {isExpanded ? <Minus size={18} /> : <Plus size={18} />}
                   </button>
@@ -3219,633 +2428,20 @@ function DictionaryScreen({ onBack, practiceSettings, recordingDurationSetting, 
               onClick={() => setVisibleCommonLimit(limit => limit + DICTIONARY_PAGE_SIZE)}
               className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/70 active:scale-[0.99]"
             >
-              Xem thêm {Math.min(DICTIONARY_PAGE_SIZE, filteredCommonWords.length - visibleCommonWords.length)} từ
+              Xem thÃªm {Math.min(DICTIONARY_PAGE_SIZE, filteredCommonWords.length - visibleCommonWords.length)} tá»«
             </button>
           )}
         </div>
 
         {filteredCommonWords.length === 0 && (
-          <div className="text-white/40 text-sm py-10 text-center">Không tìm thấy từ phù hợp.</div>
+          <div className="text-white/40 text-sm py-10 text-center">KhÃ´ng tÃ¬m tháº¥y tá»« phÃ¹ há»£p.</div>
         )}
       </div>
     </div>
   )
 }
 
-// ─── BOTTOM NAV ───────────────────────────────────────────────────────────
-
-function SentenceLibraryScreen({ sentenceProgress = {}, onPracticeSentence }) {
-  const [items, setItems] = useState([])
-  const [total, setTotal] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState(null)
-  const [query, setQuery] = useState('')
-  const [levelFilter, setLevelFilter] = useState('all')
-  const [topicFilter, setTopicFilter] = useState('all')
-  const [languageFilter, setLanguageFilter] = useState('all')
-  const [topicOptions, setTopicOptions] = useState([])
-  const [levelOptions, setLevelOptions] = useState(LEVELS)
-
-  useEffect(() => {
-    let cancelled = false
-    listLevels()
-      .then(rows => {
-        if (cancelled) return
-        const codes = rows.map(r => r.code)
-        if (codes.length > 0) setLevelOptions(codes)
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    Promise.all([
-      listSentences({
-        query,
-        level: levelFilter,
-        topic: topicFilter,
-        language: languageFilter,
-        limit: 60,
-        offset: 0,
-      }),
-      listSentenceTopics({
-        level: levelFilter,
-        language: languageFilter,
-      }),
-    ])
-      .then(([result, topics]) => {
-        if (cancelled) return
-        setItems(result.items || [])
-        setTotal(result.total || 0)
-        setHasMore(!!result.hasMore)
-        setTopicOptions(topics || [])
-      })
-      .catch(err => {
-        if (!cancelled) setError(err.message || 'Không tải được câu luyện nói.')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [languageFilter, levelFilter, query, topicFilter])
-
-  const loadMore = useCallback(async () => {
-    if (loading || loadingMore || !hasMore) return
-    setLoadingMore(true)
-    try {
-      const result = await listSentences({
-        query,
-        level: levelFilter,
-        topic: topicFilter,
-        language: languageFilter,
-        limit: 60,
-        offset: items.length,
-      })
-      setItems(prev => [...prev, ...(result.items || [])])
-      setTotal(result.total || 0)
-      setHasMore(!!result.hasMore)
-    } catch (err) {
-      setError(err.message || 'Không tải được câu luyện nói.')
-    } finally {
-      setLoadingMore(false)
-    }
-  }, [hasMore, items.length, languageFilter, levelFilter, loading, loadingMore, query, topicFilter])
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
-      <div className="px-4 pt-6 pb-3">
-        <div className="text-white text-2xl font-bold">Sentence Practice</div>
-        <div className="text-white/45 text-sm mt-1">Choose a sentence and practice full-sentence pronunciation.</div>
-      </div>
-
-      <div className="px-4 flex flex-col gap-3">
-        <input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search sentence or topic"
-          className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder:text-white/25 outline-none"
-        />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <select value={languageFilter} onChange={e => setLanguageFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
-            <option value="all">All languages</option>
-            {WORD_LANGUAGES.map(language => <option key={language} value={language}>{LANGUAGE_LABEL[language] || language}</option>)}
-          </select>
-          <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
-            <option value="all">All levels</option>
-            <option value="none">No level</option>
-            {levelOptions.map(level => <option key={level} value={level}>{level}</option>)}
-          </select>
-          <select value={topicFilter} onChange={e => setTopicFilter(e.target.value)} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white outline-none">
-            <option value="all">All topics</option>
-            {topicOptions.map(topic => <option key={topic} value={topic}>{topic}</option>)}
-          </select>
-        </div>
-
-        {loading && <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-white/50 text-sm">Loading sentences...</div>}
-        {error && <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-4 text-red-200 text-sm">{error}</div>}
-        {!loading && !error && <div className="text-white/45 text-xs">Loaded {items.length}/{total} sentences</div>}
-
-        {!loading && !error && items.map(item => {
-          const progress = sentenceProgress[item.id] || null
-          const itemLanguage = normalizeLanguage(item.language || 'english')
-          const languageLabel = LANGUAGE_LABEL[itemLanguage] || itemLanguage
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onPracticeSentence(item)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-left active:scale-[0.99] transition-transform"
-            >
-              <div className="flex items-start gap-3">
-                <div className="mt-1 w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-400/20 flex items-center justify-center text-cyan-200 font-bold">
-                  <Mic size={18} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-white font-semibold leading-snug">{item.sentence}</div>
-                  <div className="text-white/55 text-sm mt-1 leading-snug">{item.vietnamese_translation}</div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                    <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_FLAG[itemLanguage] || ''} {languageLabel}</span>
-                    {item.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{item.topic}</span>}
-                    {item.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{item.level}</span>}
-                    {progress && Number.isFinite(progress.score) && (
-                      <span className={`rounded-lg border px-2 py-1 ${scoreBg(progress.score)} ${scoreColor(progress.score)}`}>Score {progress.score}%</span>
-                    )}
-                    {progress && Number.isFinite(progress.prosodyScore) && (
-                      <span className="rounded-lg border border-fuchsia-400/20 bg-fuchsia-500/10 px-2 py-1 text-fuchsia-200">Intonation {progress.prosodyScore}%</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </button>
-          )
-        })}
-
-        {!loading && !error && items.length === 0 && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-6 text-white/45 text-sm text-center">No matching sentences found.</div>
-        )}
-        {!loading && !error && hasMore && (
-          <button
-            type="button"
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/70 disabled:opacity-50"
-          >
-            {loadingMore ? 'Loading...' : `Load more ${Math.min(60, Math.max(total - items.length, 0))} sentences`}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function compactSentenceResultForSave(result) {
-  if (!result) return result
-  return {
-    overall: result.overall,
-    spokenText: result.spokenText,
-    spokenWord: result.spokenWord,
-    accuracyScore: result.accuracyScore,
-    fluencyScore: result.fluencyScore,
-    completenessScore: result.completenessScore,
-    prosodyScore: result.prosodyScore,
-    words: result.words || [],
-    azureIpa: result.azureIpa || '',
-    phonemes: (result.phonemes || []).slice(0, 80),
-  }
-}
-
-function PracticeSentenceScreen({ sentenceItem, onBack, onSaveResult, onPracticeWord, recordingDurationSetting }) {
-  const [phase, setPhase] = useState('ready')
-  const [countdown, setCountdown] = useState(recordingDurationSetting || 5)
-  const [errorMsg, setErrorMsg] = useState(null)
-  const [result, setResult] = useState(null)
-  const [showPhonemeDetails, setShowPhonemeDetails] = useState(false)
-  const [visiblePhonemeLimit, setVisiblePhonemeLimit] = useState(48)
-  const [recordingUrl, setRecordingUrl] = useState(null)
-  const [isPlayingBack, setIsPlayingBack] = useState(false)
-  const mrRef = useRef(null)
-  const streamRef = useRef(null)
-  const audioRef = useRef(null)
-  const timeoutRef = useRef(null)
-  const countdownRef = useRef(null)
-  const sentenceLanguage = normalizeLanguage(sentenceItem?.language || 'english')
-  const lang = LANGUAGE_TO_AZURE[sentenceLanguage] || 'en-US'
-
-  useEffect(() => {
-    if (Number.isFinite(recordingDurationSetting)) setCountdown(recordingDurationSetting)
-  }, [recordingDurationSetting])
-
-  useEffect(() => () => {
-    if (recordingUrl) URL.revokeObjectURL(recordingUrl)
-  }, [recordingUrl])
-
-  const stopRecording = useCallback(() => {
-    clearTimeout(timeoutRef.current)
-    clearInterval(countdownRef.current)
-    if (mrRef.current?.state === 'recording') mrRef.current.stop()
-  }, [])
-
-  const startRecording = useCallback(() => {
-    setErrorMsg(null)
-    setResult(null)
-    setShowPhonemeDetails(false)
-    setVisiblePhonemeLimit(48)
-    setRecordingUrl(null)
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        streamRef.current = stream
-        const mimeType = getSupportedMimeType()
-        const mr = new MediaRecorder(stream, mimeType ? { mimeType } : {})
-        mrRef.current = mr
-        const chunks = []
-        mr.ondataavailable = event => { if (event.data.size > 0) chunks.push(event.data) }
-        mr.onstop = async () => {
-          clearTimeout(timeoutRef.current)
-          clearInterval(countdownRef.current)
-          stream.getTracks().forEach(track => track.stop())
-          if (chunks.length === 0) {
-            setErrorMsg('No audio was recorded. Try again.')
-            setPhase('ready')
-            return
-          }
-          const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
-          setRecordingUrl(URL.createObjectURL(blob))
-          setPhase('scoring')
-          try {
-            const nextResult = await scoreSentence(blob, sentenceItem.sentence, lang)
-            setResult(nextResult)
-            setPhase('result')
-            Promise.resolve(onSaveResult?.(compactSentenceResultForSave(nextResult)))
-              .catch(err => console.warn('[Supabase] sentence score sync failed:', err.message))
-          } catch (err) {
-            setErrorMsg(`Scoring error: ${err.message}`)
-            setPhase('ready')
-          }
-        }
-        mr.start(100)
-        setPhase('recording')
-        setCountdown(recordingDurationSetting || 5)
-        countdownRef.current = setInterval(() => setCountdown(prev => Math.max(0, prev - 1)), 1000)
-        timeoutRef.current = setTimeout(() => {
-          if (mrRef.current?.state === 'recording') mrRef.current.stop()
-        }, (recordingDurationSetting || 5) * 1000)
-      })
-      .catch(err => {
-        const isDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
-        setErrorMsg(isDenied ? 'Microphone permission is blocked. Enable Microphone from the lock icon in the address bar.' : `Microphone error: ${err.message}`)
-      })
-  }, [lang, onSaveResult, recordingDurationSetting, sentenceItem.sentence])
-
-  const playbackRecording = useCallback(() => {
-    if (!recordingUrl || !audioRef.current) return
-    if (isPlayingBack) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      setIsPlayingBack(false)
-      return
-    }
-    audioRef.current.src = recordingUrl
-    audioRef.current.onended = () => setIsPlayingBack(false)
-    audioRef.current.play().then(() => setIsPlayingBack(true)).catch(() => setIsPlayingBack(false))
-  }, [isPlayingBack, recordingUrl])
-
-  const phonemeRows = result?.phonemes || []
-  const visiblePhonemeRows = showPhonemeDetails ? phonemeRows.slice(0, visiblePhonemeLimit) : []
-  const wordRows = result?.words?.length
-    ? result.words
-    : [...new Map(phonemeRows.map(item => [item.word, item]).filter(([word]) => word)).values()].map((item, index) => ({
-        index,
-        text: item.word,
-        score: item.score,
-        errorType: null,
-      }))
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-56">
-      <audio ref={audioRef} className="hidden" />
-      <div className="px-4 pt-6 pb-2 flex items-center gap-3">
-        <button onClick={onBack} aria-label="Back" className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/70 hover:bg-white/10 transition-colors">
-          <ChevronLeft size={20} />
-        </button>
-        <span className="text-white/50 text-sm">Sentence Practice</span>
-      </div>
-
-      <div className="px-4 pb-4">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-white text-2xl font-bold leading-snug">{sentenceItem.sentence}</div>
-              <div className="text-white/55 mt-2 leading-snug">{sentenceItem.vietnamese_translation}</div>
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                <span className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2 py-1 text-cyan-100">{LANGUAGE_FLAG[sentenceLanguage] || ''} {LANGUAGE_LABEL[sentenceLanguage] || sentenceLanguage}</span>
-                {sentenceItem.topic && <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-white/60">{sentenceItem.topic}</span>}
-                {sentenceItem.level && <span className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-emerald-200">{sentenceItem.level}</span>}
-              </div>
-            </div>
-            {result && <ScoreCircle score={result.overall} size={52} />}
-          </div>
-
-          {phase === 'scoring' && <div className="mt-4 text-white/60 text-sm">Analyzing pronunciation...</div>}
-          {errorMsg && <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-red-200 text-sm">{errorMsg}</div>}
-
-          {result && (
-            <>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  <div className="text-white/45 text-[11px] uppercase tracking-wide">Overall</div>
-                  <div className={`mt-1 text-2xl font-bold ${scoreColor(result.overall)}`}>{result.overall}%</div>
-                </div>
-                <div className="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/10 px-3 py-3">
-                  <div className="text-fuchsia-200/70 text-[11px] uppercase tracking-wide">Intonation</div>
-                  <div className="mt-1 text-2xl font-bold text-fuchsia-100">{result.prosodyScore ?? 0}%</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  <div className="text-white/45 text-[11px] uppercase tracking-wide">Accuracy</div>
-                  <div className="mt-1 text-xl font-bold text-white">{result.accuracyScore ?? 0}%</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                  <div className="text-white/45 text-[11px] uppercase tracking-wide">Fluency</div>
-                  <div className="mt-1 text-xl font-bold text-white">{result.fluencyScore ?? 0}%</div>
-                </div>
-              </div>
-
-              {wordRows.length > 0 && (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-white/45 text-[11px] uppercase tracking-wide">Azure Sentence</div>
-                    <div className="text-white/35 text-[11px]">tap tung tu</div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {wordRows.map((item, index) => {
-                      const cleanWord = cleanPracticeWord(item.text)
-                      return (
-                        <button
-                          key={`${item.text}-${index}`}
-                          type="button"
-                          onClick={() => cleanWord && onPracticeWord?.(cleanWord)}
-                          disabled={!cleanWord}
-                          className={`rounded-xl border px-2.5 py-2 text-left active:scale-95 disabled:opacity-40 ${scoreTextBg(item.score)}`}
-                          title={cleanWord ? `Practice ${cleanWord}` : undefined}
-                        >
-                          <div className="font-semibold text-sm leading-tight">{item.text}</div>
-                          <div className="mt-0.5 text-[11px] opacity-75">{Math.round(item.score ?? 0)}%</div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="text-white/45 text-[11px] uppercase tracking-wide">Heard</div>
-                <div className="mt-1 text-white text-sm leading-snug">{result.spokenText || '-'}</div>
-                {showPhonemeDetails && result.azureIpa && <div className="mt-2 text-cyan-100/90 text-xs font-mono leading-relaxed break-all">/{result.azureIpa}/</div>}
-              </div>
-
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowPhonemeDetails(value => !value)}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-semibold text-white/70 active:scale-[0.99]"
-                >
-                  {showPhonemeDetails ? 'Hide phoneme details' : `Show phoneme details (${phonemeRows.length})`}
-                </button>
-                {showPhonemeDetails && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {visiblePhonemeRows.map((item, index) => (
-                    <button
-                      key={`${item.ipa}-${index}`}
-                      type="button"
-                      onClick={() => speakPhoneme(item.word || item.ipa, item.ipa, lang)}
-                      className={`rounded-xl border px-3 py-2 text-left ${scoreBg(item.score)} active:scale-95 transition-transform`}
-                    >
-                      <div className="text-white/45 text-[10px] uppercase tracking-wide">{item.word || 'phoneme'}</div>
-                      <div className="text-white font-mono text-sm">/{item.isStressed ? 'ˈ' : ''}{item.ipa}/</div>
-                      <div className={`text-xs font-bold mt-1 ${scoreColor(item.score)}`}>{item.score}%</div>
-                    </button>
-                  ))}
-                  {visiblePhonemeRows.length < phonemeRows.length && (
-                    <button
-                      type="button"
-                      onClick={() => setVisiblePhonemeLimit(limit => limit + 48)}
-                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/60 active:scale-95"
-                    >
-                      Show more
-                    </button>
-                  )}
-                </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="fixed left-1/2 bottom-[4.75rem] z-30 w-full max-w-sm -translate-x-1/2 px-4 pt-3 pb-3 rounded-t-[2rem] bg-gradient-to-t from-[#0f0f1a] via-[#0f0f1a]/95 to-transparent flex flex-col gap-2">
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => speakNeural(sentenceItem.sentence, lang)}
-            className="w-full rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-300 py-3 text-sm font-semibold active:scale-95 transition-transform flex items-center justify-center gap-2"
-          >
-            <Volume2 size={16} />
-            Model Audio
-          </button>
-          <button
-            type="button"
-            onClick={playbackRecording}
-            disabled={!recordingUrl}
-            className={`w-full rounded-2xl py-3 text-sm font-semibold active:scale-95 disabled:opacity-40 transition-transform border flex items-center justify-center gap-2 ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}
-          >
-            {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
-            {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
-          </button>
-        </div>
-        {phase === 'recording' ? (
-          <button
-            type="button"
-            onClick={stopRecording}
-            className="w-full rounded-2xl border-2 border-red-500/50 bg-red-600/20 py-6 text-red-400 shadow-lg shadow-red-900/20 active:scale-95 transition-transform flex items-center justify-center gap-3"
-          >
-            <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
-            <span className="font-bold text-xl">Speaking...</span>
-            <span className="font-bold tabular-nums text-red-300 text-2xl">{countdown}s</span>
-          </button>
-        ) : phase === 'scoring' ? (
-          <button
-            type="button"
-            disabled
-            className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-white/50 flex items-center justify-center gap-2"
-          >
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            <span>Analyzing pronunciation...</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={startRecording}
-            className="w-full rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 py-6 text-xl font-bold text-white shadow-lg shadow-red-900/30 active:scale-95 transition-transform flex items-center justify-center gap-3"
-          >
-            <Mic size={26} />
-            {result ? 'Retry' : `Speak (${recordingDurationSetting || 5}s)`}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function BottomNav({
-  screen,
-  onNavigate,
-  settingsOpen,
-  onSettingsOpenChange,
-  recordingDurationSetting,
-  onRecordingDurationChange,
-  sentenceRecordingDurationSetting,
-  onSentenceRecordingDurationChange,
-  practiceSettings,
-  onPracticeSettingsChange,
-  canAdmin = false,
-}) {
-  const items = [
-    { label: 'Home',       icon: Home,     target: 'library',    active: screen === 'library' },
-    { label: 'Library',    icon: Library,  target: 'library',    active: ['soundDetail', 'practiceWord'].includes(screen) },
-    { label: 'Sentences',  icon: Mic,      target: 'sentences',  active: ['sentences', 'practiceSentence'].includes(screen) },
-    { label: 'Dictionary', icon: BookOpen, target: 'dictionary', active: screen === 'dictionary' },
-  ]
-  if (canAdmin) items.push({ label: 'Admin', icon: Shield, target: 'admin', active: screen === 'admin' })
-  const settingItems = [
-    ['readNewWordAloud', 'Read aloud when a new word appears'],
-    ['unlearnedNavOnly', 'Next/Back only unlearned words'],
-    ['autoTranslateOnLoad', 'Automatically translate new words'],
-    ['autoExpandUsage', 'Automatically expand usage'],
-    ['showRefreshMeaningAction', 'Show "Sửa nghĩa" in practice/dictionary'],
-    ['showIncorrectAction', 'Show "Incorrect" on practice screen'],
-    ['showTranslateAction', 'Show "Translate" on practice screen'],
-    ['showDictionarySubtitle', 'Show dictionary search block'],
-  ]
-  const changePracticeSetting = (key, value) => {
-    onPracticeSettingsChange({ ...practiceSettings, [key]: value })
-  }
-
-  return (
-    <>
-      {settingsOpen && (
-        <div className="fixed left-3 right-3 bottom-20 z-50 max-w-md mx-auto max-h-[calc(100dvh-6.5rem)] rounded-2xl border border-gray-200 bg-white shadow-2xl p-3 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-200">
-            <div>
-              <div className="text-gray-950 text-sm font-semibold">Settings</div>
-              <div className="text-gray-500 text-xs">Practice behavior</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onSettingsOpenChange(false)}
-              className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-500 hover:text-gray-950 hover:bg-gray-200 transition-colors"
-              aria-label="Close settings"
-            >
-              x
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-            <div className="flex items-center justify-between gap-3 py-3">
-              <div>
-                <div className="text-gray-900 text-sm font-medium">Recording Duration</div>
-                <div className="text-gray-500 text-xs">Speak timer length</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onRecordingDurationChange(recordingDurationSetting - 1)}
-                  className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 text-lg font-bold flex items-center justify-center active:scale-90"
-                  aria-label="Decrease recording duration"
-                >
-                  &minus;
-                </button>
-                <span className="text-gray-900 text-sm w-10 text-center">{recordingDurationSetting}s</span>
-                <button
-                  type="button"
-                  onClick={() => onRecordingDurationChange(recordingDurationSetting + 1)}
-                  className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 text-lg font-bold flex items-center justify-center active:scale-90"
-                  aria-label="Increase recording duration"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 py-3 border-t border-gray-100">
-              <div>
-                <div className="text-gray-900 text-sm font-medium">Sentence Duration</div>
-                <div className="text-gray-500 text-xs">Sentence practice timer</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onSentenceRecordingDurationChange(sentenceRecordingDurationSetting - 1)}
-                  className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 text-lg font-bold flex items-center justify-center active:scale-90"
-                  aria-label="Decrease sentence recording duration"
-                >
-                  &minus;
-                </button>
-                <span className="text-gray-900 text-sm w-10 text-center">{sentenceRecordingDurationSetting}s</span>
-                <button
-                  type="button"
-                  onClick={() => onSentenceRecordingDurationChange(sentenceRecordingDurationSetting + 1)}
-                  className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 text-lg font-bold flex items-center justify-center active:scale-90"
-                  aria-label="Increase sentence recording duration"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="grid gap-2 pb-1">
-              {settingItems.map(([key, label]) => (
-                <label key={key} className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-gray-700 text-xs">
-                  <span className="leading-snug">{label}</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(practiceSettings[key])}
-                    onChange={e => changePracticeSetting(key, e.target.checked)}
-                    className="h-4 w-4 shrink-0 accent-emerald-400"
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-white/10 flex z-40">
-        {items.map(({ label, icon: Icon, target, active }) => (
-          <button key={label} onClick={() => onNavigate(target)}
-            className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${active ? 'text-white' : 'text-white/30 hover:text-white/60'}`}>
-            <Icon size={22} strokeWidth={active ? 2.5 : 1.5} />
-            <span className="text-xs">{label}</span>
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => onSettingsOpenChange(!settingsOpen)}
-          className={`w-16 shrink-0 flex flex-col items-center gap-1 py-3 border-l border-white/10 transition-colors ${settingsOpen ? 'text-white bg-white/10' : 'text-white/35 hover:text-white/60'}`}
-          aria-label="Settings"
-        >
-          <Settings size={22} strokeWidth={settingsOpen ? 2.5 : 1.5} />
-          <span className="text-xs">Settings</span>
-        </button>
-      </div>
-    </>
-  )
-}
-
-// ─── APP ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ BOTTOM NAV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MainApp({ profile }) {
   const [screen, setScreen] = useState('library')
@@ -3854,19 +2450,25 @@ function MainApp({ profile }) {
   const [practiceSentence, setPracticeSentence] = useState(null)
   const [practiceWordIdx, setPracticeWordIdx] = useState(0)
   const [lang, setLang] = useState('en')   // 'en' | 'es' | 'it'
-  const [practiceSettings, setPracticeSettingsState] = useState(() => loadPracticeSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [recordingDurationSetting, setRecordingDurationSetting] = useState(() => {
-    const saved = localStorage.getItem('recordingDuration')
-    return saved ? parseInt(saved, 10) : 3
-  })
-  const [sentenceRecordingDurationSetting, setSentenceRecordingDurationSetting] = useState(() => {
-    const saved = localStorage.getItem('sentenceRecordingDuration')
-    return saved ? parseInt(saved, 10) : 8
-  })
-  const [learnedCommonWords, setLearnedCommonWords] = useState(() => loadLearnedCommonWords())
-  const [commonWordScores, setCommonWordScores] = useState(() => loadCommonWordScores())
-  const [sentenceProgress, setSentenceProgress] = useState({})
+  const {
+    practiceSettings,
+    setPracticeSettings,
+    recordingDurationSetting,
+    changeRecordingDurationSetting,
+    sentenceRecordingDurationSetting,
+    changeSentenceRecordingDurationSetting,
+  } = usePracticeSettings()
+  const {
+    learnedCommonWords,
+    commonWordScores,
+    toggleCommonLearned: handleToggleCommonLearned,
+    saveWordPronunciationResult: handlePronunciationResult,
+  } = useProgress()
+  const {
+    sentenceProgress,
+    saveSentenceResult: handleSentencePronunciationResult,
+  } = useSentenceProgress()
 
   const azureCode = LANG_CONFIG[lang].azureCode
 
@@ -3889,20 +2491,6 @@ function MainApp({ profile }) {
     setPracticeWordIdx(-1)
     setScreen('practiceWord')
   }
-  const setPracticeSettings = (nextSettings) => {
-    setPracticeSettingsState(nextSettings)
-    savePracticeSettings(nextSettings)
-  }
-  const changeRecordingDurationSetting = (value) => {
-    const next = Math.max(1, Math.min(10, value))
-    setRecordingDurationSetting(next)
-    localStorage.setItem('recordingDuration', next)
-  }
-  const changeSentenceRecordingDurationSetting = (value) => {
-    const next = Math.max(3, Math.min(30, value))
-    setSentenceRecordingDurationSetting(next)
-    localStorage.setItem('sentenceRecordingDuration', next)
-  }
   const handleNavigate = (s) => {
     setScreen(s)
     setSelectedSound(null)
@@ -3911,84 +2499,6 @@ function MainApp({ profile }) {
     setSettingsOpen(false)
   }
   const handleChangeLang = (l) => { setLang(l); setSelectedSound(null); setPracticeWord(null) }
-  const refreshProgress = useCallback(async () => {
-    const rows = await listMyProgress()
-    const learned = new Set()
-    const scores = {}
-    rows.forEach(row => {
-      const key = row.words?.word?.toLowerCase()
-      if (!key) return
-      if (row.is_learned) learned.add(key)
-      if (Number.isFinite(Number(row.last_score))) scores[key] = Math.round(Number(row.last_score))
-    })
-    setLearnedCommonWords(learned)
-    setCommonWordScores(scores)
-    saveLearnedCommonWords(learned)
-    saveCommonWordScores(scores)
-  }, [])
-
-  useEffect(() => {
-    refreshProgress().catch(err => console.warn('[Supabase] progress load failed:', err.message))
-  }, [refreshProgress])
-
-  const refreshSentenceProgress = useCallback(async () => {
-    const rows = await listMySentenceProgress()
-    const next = {}
-    rows.forEach(row => {
-      const id = row.sentences?.id
-      if (!id) return
-      next[id] = {
-        learned: Boolean(row.is_learned),
-        score: Number.isFinite(Number(row.last_score)) ? Math.round(Number(row.last_score)) : null,
-        prosodyScore: Number.isFinite(Number(row.prosody_score)) ? Math.round(Number(row.prosody_score)) : null,
-      }
-    })
-    setSentenceProgress(next)
-  }, [])
-
-  useEffect(() => {
-    refreshSentenceProgress().catch(err => console.warn('[Supabase] sentence progress load failed:', err.message))
-  }, [refreshSentenceProgress])
-
-  const handleToggleCommonLearned = async (word, learned, score = null, meta = {}) => {
-    const key = word.toLowerCase()
-    setLearnedCommonWords(prev => {
-      const next = new Set(prev)
-      if (learned) next.add(key)
-      else next.delete(key)
-      saveLearnedCommonWords(next)
-      return next
-    })
-    setCommonWordScores(prev => {
-      const next = { ...prev }
-      if (learned && Number.isFinite(score)) next[key] = Math.round(score)
-      if (!learned) delete next[key]
-      saveCommonWordScores(next)
-      return next
-    })
-    try {
-      await setWordLearned(word, learned, score, meta)
-      await refreshProgress()
-    } catch (err) {
-      console.warn('[Supabase] learned sync failed:', err.message)
-    }
-  }
-
-  const handlePronunciationResult = async (word, result, meta = {}) => {
-    const key = word.toLowerCase()
-    setCommonWordScores(prev => {
-      const next = { ...prev, [key]: Math.round(result?.overall ?? 0) }
-      saveCommonWordScores(next)
-      return next
-    })
-    await savePronunciationResult(word, result, meta)
-    await refreshProgress()
-  }
-
-  const handleSentencePronunciationResult = async (sentenceId, result) => {
-    await saveSentencePronunciationResult(sentenceId, result)
-    await refreshSentenceProgress()
-  }
 
   const soundWords = selectedSound?.words || []
   const onNextWord = practiceWordIdx >= 0 && practiceWordIdx < soundWords.length - 1

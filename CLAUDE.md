@@ -32,14 +32,42 @@ This is a React + Vite English pronunciation learning web app. Users record them
 
 ### Key files
 
-- **`src/App.jsx`** — Large single-component main app (~138KB). Contains all learning flow UI: word cards, phoneme display, recording, scoring, progress, settings. Handles state for all user interactions.
-- **`src/supabaseData.js`** — All Supabase database operations (words, categories, progress, profiles, attempts).
+- **`src/App.jsx`** — Main app shell. Manages screen routing (word practice, sentence library, admin), global state (settings, auth, word list), and wires hooks/components together.
+- **`src/supabaseData.js`** — All Supabase database operations (words, categories, levels, progress, profiles, attempts, sentences).
 - **`src/scorer.js`** — Dual-mode pronunciation scoring: Azure Speech SDK (preferred, requires HTTPS) or Hugging Face `wav2vec2-base-960h` transformer (client-side fallback).
 - **`src/tts.js`** — Text-to-speech with Azure Neural TTS fallback to browser Web Speech API (both require HTTPS).
 - **`src/data.js`** — IPA phoneme data for English, Spanish, Italian, and French (~93KB).
-- **`src/commonWords.js`** / **`src/commonWordDetails.js`** — 3000 most common English words with metadata (214KB / 1.2MB static data files). These are bundled directly and can impact initial load time.
+- **`src/utils/dictionaryHelpers.js`** — IPA/dictionary lookup, caching, and word-detail building for the practice screen.
+- **`src/commonWords.js`** / **`src/commonWordDetails.js`** — 3000 most common English words with metadata (214KB / 1.2MB static data files). Bundled directly; significant impact on initial load.
 - **`src/AdminScreen.jsx`** — Admin panel for content management (user role: `admin`).
 - **`src/api-scorers.js`** — API scorer implementations for pronunciation assessment.
+
+### Hooks (`src/hooks/`)
+
+| Hook | Responsibility |
+|---|---|
+| `useAudioRecorder` | Raw MediaRecorder lifecycle — start/stop/cancel, countdown, blob storage, segment playback |
+| `useWordPronunciation` | Orchestrates recording → `scoreWord()` → result state for a single word |
+| `useSentencePronunciation` | Same flow for full sentences, adds phoneme-row breakdown |
+| `useProgress` | Syncs learned-word set and scores between Supabase and localStorage |
+| `useSentenceProgress` | Same for sentence attempts |
+| `usePracticeSettings` | Loads/persists user settings (recording duration, language, etc.) |
+
+### Components (`src/components/`)
+
+- **`practice/`** — Word practice UI: `WordHeader`, `WordIpaPanel`, `WordPhonemeGrid`, `WordUsagePanel`, `RecordingConsole`, `PracticeStatusMessages`, `PracticeNavigationActions`, `RootWordBadge`
+- **`sentence/`** — `SentenceLibraryScreen` (topic browser) and `PracticeSentenceScreen` (recording + scoring)
+- **`common/`** — Shared: `ScoreCircle`, `AzureUsageBadge`, `LevelCombobox`
+- **`layout/`** — `BottomNav`
+
+### Utilities (`src/utils/`)
+
+- **`scoring/scoreUi.js`** — `scoreBg`, `scoreColor`, `scoreTextBg` helpers for score-based Tailwind classes
+- **`scoring/sentenceResult.js`** — Sentence-level result aggregation
+- **`storage/`** — localStorage helpers for progress, settings, and incorrect-word reports
+- **`words/wordNormalize.js`** — `cleanPracticeWord` strips punctuation before scoring
+- **`phonemes/phonemeFormat.js`** — `formatIpa` display helper
+- **`constants/languages.js`** — Language ↔ Azure locale ↔ flag/label maps
 
 ### Important implementation notes
 
@@ -58,7 +86,7 @@ A FastAPI Python backend exists in `/backend/` (`scorer.py`, `main.py`) but is n
 
 ### Database (Supabase)
 
-Schema defined in `supabase/schema.sql`. Key tables: `profiles`, `categories`, `words`, `user_word_progress`, `pronunciation_attempts`, `import_batches`. User roles: `admin`, `teacher`, `student`.
+Schema defined in `supabase/schema.sql`. Key tables: `profiles`, `categories`, `levels`, `words`, `user_word_progress`, `pronunciation_attempts`, `import_batches`, `sentences`, `sentence_topics`. User roles: `admin`, `teacher`, `student`. Levels (A1–C2 by default) are stored in the `levels` table and can be customised by admins; `LEVELS` in `supabaseData.js` is a mutable module-level array kept in sync at runtime.
 
 ### Environment variables
 
@@ -79,3 +107,21 @@ VITE_GOOGLE_IMAGE_SEARCH_CX=       # Custom Search engine ID
 ```
 
 Supabase client is initialized in `src/supabaseClient.js`. The dev server runs on HTTPS by default (via `@vitejs/plugin-basic-ssl`).
+# Quy định về Lệnh Shell (Shell Execution Rules)
+- KHÔNG TỰ Ý chạy các lệnh: `npm run dev`, `npm run build`, `git commit`, `git push`.
+- Nếu cần kiểm tra code, chỉ yêu cầu người dùng tự chạy các lệnh đó bên ngoài terminal hệ thống.
+- Chỉ chạy các lệnh đọc file hoặc kiểm tra nhanh (như `ls`, `cat`) khi thực sự cần thiết.
+# Môi trường: Vite Webapp
+
+# Quy tắc phản hồi (Tiết kiệm Token)
+- Trả lời cực ngắn theo phong cách "caveman" (người tối cổ).
+- Không giải thích kiến thức nền tảng về Vite, React, Vue hoặc Bundler.
+- Chỉ hiển thị đúng hàm hoặc component cần sửa đổi. Không chép lại cả file.
+- Định dạng code: Chỉ hiển thị diff hoặc dòng code thay đổi.
+
+
+Giới hạn số dòng: "Không file nào được vượt quá 250 dòng".
+
+Chia nhỏ logic: "Tách toàn bộ logic xử lý âm thanh (Azure/Hugging Face) ra khỏi UI".
+
+Quy trình 2 bước: Luôn yêu cầu AI: "Phân tích và đề xuất cấu trúc file trước khi viết code".

@@ -1,0 +1,61 @@
+
+
+---
+
+# ARCHITECTURE REFACTORING SPECIFICATION:  (learnPronunciation)
+
+## 1. PROJECT CONTEXT & THE "BIG PROBLEM"
+
+* **App:** English Pronunciation learning tool (React + Vite + Supabase).
+* **Current Technical Debt:** `src/App.jsx` is a 4,157-line monolith (~138KB) handling everything: Auth, State, UI, Audio Recording, Scorer Logic (Azure/HF), and TTS.
+* **Performance Issue:** Static data files like `commonWordDetails.js` (1.2MB) are bundled directly, killing initial load time.
+* **Requirement:** Refactor into a **Feature-based Architecture** while maintaining HTTPS-required APIs (Azure Speech SDK, MediaDevices).
+
+## 2. STRICT CONSTRAINTS (NO EXCEPTIONS)
+
+* **Line Limit:** No single file (Component/Hook) shall exceed **250 lines**. Split recursively if needed.
+* **Folder Hierarchy:** Flattened `src/` must be reorganized into:
+* `src/components/`: Pure UI components (Tailwind).
+* `src/hooks/`: All business logic (Audio, Scorer, Auth, Progress).
+* `src/services/`: API/SDK wrappers (Supabase, Azure, TTS).
+* `src/context/`: Global states (Auth, Theme, Settings).
+* `src/utils/`: Pure helper functions and constants.
+
+
+* **Dual-Mode Preservation:** Must preserve the fallback logic: Azure (Preferred) → Hugging Face (Offline) for scoring.
+* **Zero-Logic UI:** Components should only receive props and trigger callbacks. All logic lives in Hooks.
+
+## 3. REFACTORING ROADMAP
+
+### Phase 1: Logic Extraction (The "Brain" surgery)
+
+1. **`usePronunciation` Hook:** Extract recording and dual-mode scoring logic (`scorer.js` + `api-scorers.js`).
+2. **`useTTS` Hook:** Extract Azure Neural TTS and Web Speech fallback logic (`tts.js`).
+3. **`useDatabase` Hook:** Wrap all Supabase CRUD operations from `supabaseData.js`.
+
+### Phase 2: UI Decomposition (The "Body" split)
+
+1. Split `App.jsx` return block into: `LearningModule`, `WordCarousel`, `PronunciationFeedback`, and `RecordingConsole`.
+2. Move `AdminScreen.jsx` and `AuthGate.jsx` into appropriate folders.
+
+### Phase 3: Data Optimization
+
+1. Move `commonWordDetails.js` (1.2MB) out of the main bundle. Implement dynamic/lazy loading or fetch via Supabase.
+
+## 4. EXECUTION RULES FOR AI
+
+* **Step 1:** Analyze the current `App.jsx` and propose a detailed **File Tree Structure**.
+* **Step 2:** List all **Custom Hooks** and the states/methods they will expose.
+* **Step 3:** Wait for user approval of the plan before writing any code.
+* **Formatting:** Use `diff` blocks for small changes or provide full content for new small files.
+
+**DO NOT proceed with code generation until the File Tree is approved.**
+
+---
+
+### Mẹo cho bạn khi chạy lệnh này:
+
+1. Khi Gemini đề xuất cây thư mục, hãy kiểm tra xem nó có tách riêng phần **Azure** và **Hugging Face** ra không. Nếu nó gộp chung quá nhiều vào một Hook, hãy bảo nó: *"Split usePronunciation into useAzureScorer and useOfflineScorer"*.
+2. Với file 1.2MB, hãy yêu cầu nó dùng **Dynamic Import** (`import()`) để khi nào người dùng bắt đầu luyện tập mới tải dữ liệu đó về, giúp app mở lên nhanh tức thì.
+3. Vì bạn dùng **Supabase**, hãy nhắc nó tận dụng `supabaseClient.js` để tránh khởi tạo lại client ở nhiều nơi.
+
