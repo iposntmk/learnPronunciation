@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev                    # Start HTTPS dev server on port 5173 (accessible on local network)
+npm run dev                    # Start HTTP dev server on port 5173 (localhost only, no SSL)
+npm run dev:mobile             # Start HTTPS dev server accessible on local network (required for mobile testing, TTS, and scoring APIs)
 npm run build                  # Production build
 npm run preview                # Preview production build
 npm run supabase:seed          # Seed Supabase with 3000 common English words
@@ -41,6 +42,7 @@ This is a React + Vite English pronunciation learning web app. Users record them
 - **`src/commonWords.js`** / **`src/commonWordDetails.js`** — 3000 most common English words with metadata (214KB / 1.2MB static data files). Bundled directly; significant impact on initial load.
 - **`src/AdminScreen.jsx`** — Admin panel for content management (user role: `admin`).
 - **`src/api-scorers.js`** — API scorer implementations for pronunciation assessment.
+- **`src/azureUsage.js`** — Tracks Azure Speech monthly quota in localStorage (5h free tier = 18 000 s/month); exposed via `AzureUsageBadge`.
 
 ### Hooks (`src/hooks/`)
 
@@ -71,10 +73,10 @@ This is a React + Vite English pronunciation learning web app. Users record them
 
 ### Important implementation notes
 
-**HTTPS requirement:** The app runs HTTPS by default (via `@vitejs/plugin-basic-ssl`). This is required for:
-- Audio recording (getUserMedia API)
-- Text-to-speech and pronunciation scoring APIs
-- Mobile network access during development
+**HTTPS requirement:** Only `npm run dev:mobile` enables HTTPS (via `@vitejs/plugin-basic-ssl`). This is required for:
+- Audio recording (getUserMedia API) on mobile
+- Text-to-speech and pronunciation scoring APIs over the network
+- Testing on physical devices on the same WiFi
 
 **Large dependencies:** The Hugging Face transformer model (`@huggingface/transformers`) is excluded from Vite's `optimizeDeps` due to its size. It's lazy-loaded only when Azure scoring is unavailable. The static word/phrase data files are bundled directly and contribute significantly to the initial bundle.
 
@@ -107,6 +109,20 @@ VITE_GOOGLE_IMAGE_SEARCH_CX=       # Custom Search engine ID
 ```
 
 Supabase client is initialized in `src/supabaseClient.js`. The dev server runs on HTTPS by default (via `@vitejs/plugin-basic-ssl`).
+
+### Encoding — UTF-8 (quan trọng)
+
+Tất cả file nguồn phải là **UTF-8 không BOM**. Project dùng tiếng Việt đầy đủ dấu.
+
+**Phát hiện mojibake** (chuỗi như `Tá»«`, `Ã‚m` trong source → bị double-encode):
+```bash
+grep -rn "Ã\|á»\|Ä'\|áº" src/
+```
+
+**Fix:** xem `agents.md` để có lệnh PowerShell fix đầy đủ.
+
+Nguyên nhân: editor Windows đọc UTF-8 bằng CP1252 rồi lưu lại → byte bị mã hoá đôi. Không copy-paste từ file đang bị mojibake sang file mới.
+
 # Quy định về Lệnh Shell (Shell Execution Rules)
 - KHÔNG TỰ Ý chạy các lệnh: `npm run dev`, `npm run build`, `git commit`, `git push`.
 - Nếu cần kiểm tra code, chỉ yêu cầu người dùng tự chạy các lệnh đó bên ngoài terminal hệ thống.
