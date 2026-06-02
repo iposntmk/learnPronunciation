@@ -12,6 +12,9 @@ function getSupportedMimeType() {
 }
 
 function microphoneErrorMessage(error) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return 'Trình duyệt không cho phép ghi âm trên HTTP qua mạng LAN. Hãy chạy npm run dev:mobile và mở URL HTTPS.'
+  }
   const isDenied = error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError'
   return isDenied
     ? 'Microphone permission is blocked. Enable Microphone from the lock icon in the address bar.'
@@ -71,6 +74,13 @@ export function useAudioRecorder() {
     cancelStopRef.current = false
     setRecorderError(null)
     setRecordingUrl(null)
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      const message = microphoneErrorMessage(new Error('getUserMedia unavailable'))
+      setRecorderError(message)
+      onEmpty?.(message)
+      return
+    }
 
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {

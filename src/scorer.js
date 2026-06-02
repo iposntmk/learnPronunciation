@@ -159,8 +159,6 @@ async function scoreWordOffline(audioBlob, phonemes) {
   const targets = charMap.map(x => x.id)
   const stateSeq = ctcForcedAlign(lp, targets, T, V)
 
-  // Per-character: collect relative log-prob (target vs best at each frame)
-  // and the most-voted non-target character for feedback notes
   const charData = Array.from({ length: charMap.length }, () => ({ relLps: [], altIds: [] }))
   for (let t = 0; t < T; t++) {
     const s = stateSeq[t]
@@ -172,22 +170,15 @@ async function scoreWordOffline(audioBlob, phonemes) {
     for (let v = 1; v < V; v++) {
       if (lp[off + v] > maxLp) { maxLp = lp[off + v]; maxId = v }
     }
-    // Relative log-prob: 0 = target is best, negative = something else is better
     charData[ci].relLps.push(lp[off + targets[ci]] - maxLp)
     if (maxId !== targets[ci]) charData[ci].altIds.push(maxId)
   }
 
-  // Score each character using relative log-prob calibrated to [0, 100]
-  // Range: 0 (target is best) → 100; ~−3.4 (uniform random) → ~32; −5 → 41 clipped to 0
-  // Using sigmoid-like shape: score = 100 * exp(3 * avgRel) clamped to [0, 100]
   const charScores = charData.map(({ relLps, altIds }, ci) => {
     if (relLps.length === 0) return { score: 10, heardChar: null }
     const avgRel = relLps.reduce((a, b) => a + b, 0) / relLps.length
-    // 100 * e^(3*avg): at 0 → 100, at -0.7 → 12, at -1 → 5... too harsh
-    // Linear: [−4, 0] → [0, 100]
     const score = Math.max(0, Math.min(100, Math.round((avgRel + 4) / 4 * 100)))
 
-    // Most-voted alt character (what was actually heard instead)
     let heardChar = null
     if (altIds.length > altIds.length / 2) {  // majority of frames heard something else
       const freq = {}
@@ -202,12 +193,10 @@ async function scoreWordOffline(audioBlob, phonemes) {
     return { score, heardChar }
   })
 
-  // Aggregate characters → phonemes
   const scored = phonemes.map((p, pi) => {
     const chars = charMap.map((c, ci) => c.pi === pi ? charScores[ci] : null).filter(Boolean)
     if (chars.length === 0) return { ...p, score: 0, note: null }
 
-    // Use minimum score across characters — weakest character limits phoneme quality
     const score = Math.round(chars.reduce((s, c) => s + c.score, 0) / chars.length)
     const heard = chars.map(c => c.heardChar).filter(Boolean).join('')
     const note = heard && score < 70 ? `Nghe như /${heard}/` : null
@@ -219,28 +208,28 @@ async function scoreWordOffline(audioBlob, phonemes) {
   return { phonemes: scored, overall, spokenWord: spokenWord || phonemes.map(p => p.text).join('') }
 }
 
-export async function scoreWord(audioBlob, phonemes, language = 'en-US') {
-  const key = import.meta.env.VITE_AZURE_KEY
-  const region = import.meta.env.VITE_AZURE_REGION || 'southeastasia'
-  console.log('[Azure] key defined:', !!key, '| key length:', key?.length ?? 0, '| region:', region, '| lang:', language)
-  if (!key) {
+export async function scoreWord(audioBlob, phonemes, language = 'en-US', options = {}) {
+  const { hasAzureProxy, scoreWordViaAzureProxy } = await import('./utils/scoring/azureProxy.js')
+  if (!hasAzureProxy()) {
     if (language === 'en-US') {
-      console.warn('[Scoring] VITE_AZURE_KEY is missing; using offline English scorer.')
+      console.warn('[Scoring] VITE_AZURE_PROXY_URL is missing; using offline English scorer.')
       return scoreWordOffline(audioBlob, phonemes)
     }
-    throw new Error('Azure key chưa được cấu hình (VITE_AZURE_KEY). Scoring offline hiện chỉ hỗ trợ tiếng Anh.')
+    throw new Error('Azure proxy chưa được cấu hình (VITE_AZURE_PROXY_URL). Scoring offline hiện chỉ hỗ trợ tiếng Anh.')
   }
-  const { scoreWordAzure } = await import('./api-scorers.js')
-  return scoreWordAzure(audioBlob, phonemes, key, region, language)
+  const referenceText = options.referenceText || phonemes.map(p => p.text).join('')
+  const scoreAzure = () => scoreWordViaAzureProxy(audioBlob, phonemes, referenceText, language)
+  if (language !== 'en-US') return scoreAzure()
+  const { shouldAssessStress, assessWithStress } = await import('./utils/scoring/speechSuperStress.js')
+  return shouldAssessStress(referenceText, phonemes)
+    ? assessWithStress(audioBlob, referenceText, { phonemes, language, scoreAzure })
+    : scoreAzure()
 }
 
 export async function scoreSentence(audioBlob, referenceText, language = 'en-US') {
-  const key = import.meta.env.VITE_AZURE_KEY
-  const region = import.meta.env.VITE_AZURE_REGION || 'southeastasia'
-  console.log('[Azure sentence] key defined:', !!key, '| key length:', key?.length ?? 0, '| region:', region, '| lang:', language)
-  if (!key) {
-    throw new Error('Azure key chưa được cấu hình (VITE_AZURE_KEY). Sentence scoring requires Azure.')
+  const { hasAzureProxy, scoreSentenceViaAzureProxy } = await import('./utils/scoring/azureProxy.js')
+  if (!hasAzureProxy()) {
+    throw new Error('Azure proxy chưa được cấu hình (VITE_AZURE_PROXY_URL). Sentence scoring requires Azure.')
   }
-  const { scoreSentenceAzure } = await import('./api-scorers.js')
-  return scoreSentenceAzure(audioBlob, referenceText, key, region, language)
+  return scoreSentenceViaAzureProxy(audioBlob, referenceText, language)
 }

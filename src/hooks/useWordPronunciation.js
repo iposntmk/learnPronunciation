@@ -4,6 +4,7 @@ import { useAudioRecorder } from './useAudioRecorder.js'
 
 export function useWordPronunciation({
   phonemes,
+  referenceText,
   lang,
   recordingDuration,
   canScoreWord,
@@ -44,7 +45,7 @@ export function useWordPronunciation({
       onRecorded: async blob => {
         setPhase('scoring')
         try {
-          const data = await scoreWord(blob, phonemes, lang)
+          const data = await scoreWord(blob, phonemes, lang, { referenceText })
           setResult(data)
           setPhase('result')
           Promise.resolve(onScoreResult?.(data)).catch(err => console.warn('[Supabase] score sync failed:', err.message))
@@ -54,7 +55,7 @@ export function useWordPronunciation({
         }
       },
     })
-  }, [lang, onScoreResult, phonemes, recordingDuration, startAudioRecording])
+  }, [lang, onScoreResult, phonemes, recordingDuration, referenceText, startAudioRecording])
 
   const startRecording = useCallback(() => {
     if (isResolvingPhonemes) {

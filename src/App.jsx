@@ -23,6 +23,7 @@ import WordUsagePanel from './components/practice/WordUsagePanel.jsx'
 import RootWordBadge from './components/practice/RootWordBadge.jsx'
 import PracticeStatusMessages from './components/practice/PracticeStatusMessages.jsx'
 import PracticeNavigationActions from './components/practice/PracticeNavigationActions.jsx'
+import StressFeedbackPanel from './components/practice/StressFeedbackPanel.jsx'
 import { scoreBg, scoreColor, scoreTextBg } from './utils/scoring/scoreUi.js'
 import { formatIpa } from './utils/phonemes/phonemeFormat.js'
 import { cleanPracticeWord } from './utils/words/wordNormalize.js'
@@ -1202,6 +1203,7 @@ function PronunciationPractice({
     playPhoneme,
   } = useWordPronunciation({
     phonemes,
+    referenceText: word,
     lang,
     recordingDuration,
     canScoreWord,
@@ -1447,6 +1449,7 @@ function PronunciationPractice({
           selectedPhoneme={sel}
           playPhoneme={playPhoneme}
         />
+        <StressFeedbackPanel feedback={result?.combinedFeedback || []} compact={compact} />
       </div>
 
       {/* Kết quả tổng */}

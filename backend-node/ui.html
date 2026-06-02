@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pronunciation Backend</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#0d1117;color:#e6edf3}
+    main{max-width:1040px;margin:0 auto;padding:28px 18px 56px}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}
+    h1{font-size:28px;margin:0 0 6px}.muted{color:#8b949e}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid #30363d;border-radius:999px;padding:8px 12px;background:#161b22;font-size:13px}
+    .dot{width:9px;height:9px;border-radius:50%;background:#f85149}.ok .dot{background:#3fb950}.warn .dot{background:#d29922}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    section{border:1px solid #30363d;border-radius:12px;background:#161b22;padding:18px}h2{font-size:17px;margin:0 0 14px}
+    label{display:block;margin:12px 0 6px;color:#c9d1d9;font-size:13px;font-weight:650}input{width:100%;border:1px solid #30363d;background:#0d1117;color:#e6edf3;border-radius:10px;padding:11px;font-size:15px}input[type=checkbox]{width:auto}
+    button{border:0;border-radius:10px;padding:11px 14px;font-weight:750;cursor:pointer;background:#238636;color:#fff}button.secondary{background:#21262d;color:#c9d1d9;border:1px solid #30363d}button.blue{background:#1f6feb}button:disabled{opacity:.55;cursor:not-allowed}
+    audio{width:100%;margin-top:10px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.stack{display:flex;flex-direction:column;gap:10px}.metric{display:flex;justify-content:space-between;gap:12px;border-top:1px solid #30363d;padding-top:10px;margin-top:10px}
+    .metric code{font-size:12px;text-align:right}.error{border-color:#f85149;background:#3b1518;color:#ffd6d6}.success{border-color:#3fb950;background:#13341f;color:#c6f6d5}
+    pre{white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto;border:1px solid #30363d;background:#0d1117;border-radius:10px;padding:12px;font-size:12px}
+    .result{margin-top:14px}.hidden{display:none}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:820px){.grid,.split{grid-template-columns:1fr}.top{flex-direction:column}h1{font-size:24px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <h1>Pronunciation Backend</h1>
+      <div class="muted">Cấu hình Azure Speech, SpeechSuper và ElevenLabs cho frontend cùng mạng Wi-Fi.</div>
+    </div>
+    <div id="statusPill" class="pill"><span class="dot"></span><span>Đang kiểm tra...</span></div>
+  </div>
+
+  <div class="grid">
+    <section>
+      <h2>Trạng thái</h2>
+      <div class="stack">
+        <div class="metric"><span>Azure key</span><strong id="azureKey">-</strong></div>
+        <div class="metric"><span>Azure region</span><strong id="azureRegion">-</strong></div>
+        <div class="metric"><span>ElevenLabs key</span><strong id="elevenLabsKey">-</strong></div>
+        <div class="metric"><span>ElevenLabs voice</span><strong id="elevenLabsVoice">-</strong></div>
+        <div class="metric"><span>ElevenLabs model</span><strong id="elevenLabsModel">-</strong></div>
+        <div class="metric"><span>SpeechSuper appKey</span><strong id="appKey">-</strong></div>
+        <div class="metric"><span>SpeechSuper secret</span><strong id="secretKey">-</strong></div>
+        <div class="metric"><span>SpeechSuper user</span><strong id="userId">-</strong></div>
+        <div class="metric"><span>Backend direct URL</span><code id="azureProxyUrl">-</code></div>
+        <div class="metric"><span>ElevenLabs direct URL</span><code id="elevenLabsProxyUrl">-</code></div>
+        <div class="metric"><span>SpeechSuper direct URL</span><code id="speechSuperProxyUrl">-</code></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Cấu hình nhanh</h2>
+      <form id="configForm">
+        <div class="split">
+          <div>
+            <label for="cfgAzureKey">Azure Speech key</label>
+            <input id="cfgAzureKey" type="password" autocomplete="off" placeholder="Để trống để giữ key hiện tại" />
+          </div>
+          <div>
+            <label for="cfgAzureRegion">Azure region</label>
+            <input id="cfgAzureRegion" autocomplete="off" placeholder="southeastasia" />
+          </div>
+        </div>
+        <label for="cfgAppKey">SpeechSuper appKey</label>
+        <input id="cfgAppKey" autocomplete="off" placeholder="Để trống để giữ appKey hiện tại" />
+        <label for="cfgSecretKey">SpeechSuper secretKey</label>
+        <input id="cfgSecretKey" type="password" autocomplete="off" placeholder="Để trống để giữ secret hiện tại" />
+        <label for="cfgUserId">SpeechSuper User ID mặc định</label>
+        <input id="cfgUserId" autocomplete="off" placeholder="guest" />
+        <label for="cfgElevenLabsApiKey">ElevenLabs API key</label>
+        <input id="cfgElevenLabsApiKey" type="password" autocomplete="off" placeholder="Để trống để giữ key hiện tại" />
+        <div class="split">
+          <div>
+            <label for="cfgElevenLabsVoiceId">ElevenLabs voice ID</label>
+            <input id="cfgElevenLabsVoiceId" autocomplete="off" placeholder="JBFqnCBsd6RMkjVDRZzb" />
+          </div>
+          <div>
+            <label for="cfgElevenLabsModelId">ElevenLabs model</label>
+            <input id="cfgElevenLabsModelId" autocomplete="off" placeholder="eleven_multilingual_v2" />
+          </div>
+        </div>
+        <label class="row" style="margin-top:12px"><input id="cfgPersist" type="checkbox" /> Lưu vào .env.local</label>
+        <div class="row" style="margin-top:12px">
+          <button type="submit">Lưu cấu hình</button>
+          <span id="configMsg" class="muted"></span>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <section style="margin-top:14px">
+    <h2>Test nhanh</h2>
+    <form id="testForm">
+      <div class="split">
+        <div>
+          <label for="text">Từ tiếng Anh</label>
+          <input id="text" name="text" value="record" autocomplete="off" />
+        </div>
+        <div>
+          <label for="userIdInput">SpeechSuper User ID tùy chọn</label>
+          <input id="userIdInput" name="userId" placeholder="Bỏ trống để dùng cấu hình mặc định" />
+        </div>
+      </div>
+      <label for="audio">Upload audio</label>
+      <input id="audio" name="audio" type="file" accept="audio/wav,audio/mpeg,audio/mp3,audio/ogg,audio/opus,.wav,.mp3,.ogg,.opus" />
+      <label>Ghi âm nhanh</label>
+      <div class="row">
+        <button class="secondary" type="button" id="recordBtn">Ghi âm</button>
+        <button class="secondary" type="button" id="stopBtn" disabled>Dừng</button>
+        <span class="muted">Nếu mở bằng HTTP trên điện thoại, hãy upload file vì browser thường chặn micro.</span>
+      </div>
+      <audio id="preview" controls class="hidden"></audio>
+      <div class="row" style="margin-top:14px">
+        <button class="blue" type="button" id="azureBtn">Test Azure</button>
+        <button class="secondary" type="button" id="elevenLabsBtn">Test ElevenLabs TTS</button>
+        <button type="button" id="speechSuperBtn">Test SpeechSuper</button>
+        <button class="secondary" type="button" id="clearBtn">Xóa kết quả</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="result hidden" id="resultBox">
+    <h2>Kết quả</h2>
+    <div id="summary" class="pill"></div>
+    <pre id="jsonOut"></pre>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id),statusPill=$('statusPill'),summary=$('summary'),jsonOut=$('jsonOut'),resultBox=$('resultBox'),audioInput=$('audio'),recordBtn=$('recordBtn'),stopBtn=$('stopBtn'),preview=$('preview'),azureBtn=$('azureBtn'),elevenLabsBtn=$('elevenLabsBtn'),speechSuperBtn=$('speechSuperBtn');
+let mediaRecorder,chunks=[],recordedBlob=null;
+function yesNo(v){return v?'Đã cấu hình':'Thiếu'}
+function localBase(){return `${location.protocol}//${location.host}`}
+function wavBlob(pcm){const b=new ArrayBuffer(44+pcm.length*2),v=new DataView(b),w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};w(0,'RIFF');v.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,16000,true);v.setUint32(28,32000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,pcm.length*2,true);for(let i=0;i<pcm.length;i++)v.setInt16(44+i*2,Math.max(-32768,Math.min(32767,Math.round(pcm[i]*32767))),true);return new Blob([b],{type:'audio/wav'})}
+async function toWav(blob){const ab=await blob.arrayBuffer(),AudioCtx=window.AudioContext||window.webkitAudioContext,ctx=new AudioCtx(),audio=await ctx.decodeAudioData(ab);await ctx.close();const frames=Math.ceil(audio.duration*16000),off=new OfflineAudioContext(1,frames,16000),src=off.createBufferSource();src.buffer=audio;src.connect(off.destination);src.start();return wavBlob((await off.startRendering()).getChannelData(0))}
+function setStatusPill(s){statusPill.className='pill';const ready=s.azureConfigured&&s.speechSuperConfigured&&s.elevenLabsConfigured;if(ready){statusPill.classList.add('ok');statusPill.querySelector('span:last-child').textContent='Azure + SpeechSuper + ElevenLabs sẵn sàng'}else if(s.azureConfigured||s.speechSuperConfigured||s.elevenLabsConfigured){statusPill.classList.add('warn');statusPill.querySelector('span:last-child').textContent='Thiếu một phần cấu hình'}else{statusPill.querySelector('span:last-child').textContent='Thiếu cấu hình'}}
+async function loadStatus(){const r=await fetch('/speechsuper/status'),s=await r.json();setStatusPill(s);$('azureKey').textContent=yesNo(s.azureKeyConfigured);$('azureRegion').textContent=s.azureRegion||'-';$('elevenLabsKey').textContent=yesNo(s.elevenLabsKeyConfigured);$('elevenLabsVoice').textContent=s.elevenLabsVoiceId||'-';$('elevenLabsModel').textContent=s.elevenLabsModelId||'-';$('appKey').textContent=yesNo(s.appKeyConfigured);$('secretKey').textContent=yesNo(s.secretKeyConfigured);$('userId').textContent=s.userId||'guest';$('cfgAzureRegion').value=s.azureRegion||'southeastasia';$('cfgUserId').value=s.userId||'guest';$('cfgElevenLabsVoiceId').value=s.elevenLabsVoiceId||'';$('cfgElevenLabsModelId').value=s.elevenLabsModelId||'eleven_multilingual_v2';$('azureProxyUrl').textContent=localBase();$('elevenLabsProxyUrl').textContent=`${localBase()}/elevenlabs/tts`;$('speechSuperProxyUrl').textContent=`${localBase()}/speechsuper/pronunciation`}
+$('configForm').onsubmit=async e=>{e.preventDefault();const payload={azureKey:$('cfgAzureKey').value,azureRegion:$('cfgAzureRegion').value,appKey:$('cfgAppKey').value,secretKey:$('cfgSecretKey').value,userId:$('cfgUserId').value,elevenLabsApiKey:$('cfgElevenLabsApiKey').value,elevenLabsVoiceId:$('cfgElevenLabsVoiceId').value,elevenLabsModelId:$('cfgElevenLabsModelId').value,persist:$('cfgPersist').checked};$('configMsg').textContent='Đang lưu...';try{const r=await fetch('/speechsuper/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok)throw new Error(data.detail||`HTTP ${r.status}`);$('cfgAzureKey').value='';$('cfgSecretKey').value='';$('cfgElevenLabsApiKey').value='';$('configMsg').textContent=payload.persist?'Đã lưu vào .env.local':'Đã lưu cho phiên server hiện tại';await loadStatus()}catch(err){$('configMsg').textContent=err.message}}
+recordBtn.onclick=async()=>{if(!navigator.mediaDevices?.getUserMedia){summary.className='pill error';summary.textContent='Browser không cho ghi âm ở địa chỉ này. Hãy upload file audio.';resultBox.classList.remove('hidden');return}const stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];recordedBlob=null;mediaRecorder=new MediaRecorder(stream);mediaRecorder.ondataavailable=e=>chunks.push(e.data);mediaRecorder.onstop=()=>{recordedBlob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'});preview.src=URL.createObjectURL(recordedBlob);preview.classList.remove('hidden');stream.getTracks().forEach(t=>t.stop())};mediaRecorder.start();recordBtn.disabled=true;stopBtn.disabled=false;audioInput.value=''};
+stopBtn.onclick=()=>{mediaRecorder?.stop();recordBtn.disabled=false;stopBtn.disabled=true};
+audioInput.onchange=()=>{recordedBlob=null;preview.classList.add('hidden');preview.removeAttribute('src')};
+$('clearBtn').onclick=()=>{resultBox.classList.add('hidden');jsonOut.textContent='';summary.textContent=''};
+async function runTest(kind){const file=audioInput.files[0],text=$('text').value.trim(),userId=$('userIdInput').value.trim();if(!text){alert('Nhập từ tiếng Anh trước.');return}resultBox.classList.remove('hidden');jsonOut.textContent='';summary.className='pill';try{azureBtn.disabled=true;elevenLabsBtn.disabled=true;speechSuperBtn.disabled=true;if(kind==='elevenlabs'){summary.textContent='Đang gửi ElevenLabs...';const r=await fetch('/elevenlabs/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,language:'en-US',kind:'word'})});if(!r.ok){const data=await r.json().catch(()=>({}));throw new Error(data.detail||`HTTP ${r.status}`)}const blob=await r.blob();preview.src=URL.createObjectURL(blob);preview.classList.remove('hidden');await preview.play().catch(()=>{});summary.className='pill success';summary.textContent='ElevenLabs OK';jsonOut.textContent='Đã tạo audio mẫu bằng ElevenLabs.';return}if(!file&&!recordedBlob){alert('Chọn audio hoặc ghi âm trước.');return}const form=new FormData();const audio=await toWav(file||recordedBlob);form.append('audio',audio,'test.wav');let url;if(kind==='azure'){summary.textContent='Đang gửi Azure...';url='/azure/word';form.append('referenceText',text);form.append('language','en-US')}else{summary.textContent='Đang gửi SpeechSuper...';url='/speechsuper/pronunciation';form.append('text',text);if(userId)form.append('userId',userId)}const r=await fetch(url,{method:'POST',body:form});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.detail||`HTTP ${r.status}`);summary.className='pill success';summary.textContent=kind==='azure'?`Azure OK · overall: ${data.overall??'-'}`:`SpeechSuper OK · stressScore: ${data.stressScore??'-'} · issues: ${(data.issues||[]).length}`;jsonOut.textContent=JSON.stringify(data,null,2)}catch(err){summary.className='pill error';summary.textContent='Lỗi';jsonOut.textContent=err.message}finally{azureBtn.disabled=false;elevenLabsBtn.disabled=false;speechSuperBtn.disabled=false}}
+azureBtn.onclick=()=>runTest('azure');
+elevenLabsBtn.onclick=()=>runTest('elevenlabs');
+speechSuperBtn.onclick=()=>runTest('speechsuper');
+loadStatus().catch(err=>{statusPill.querySelector('span:last-child').textContent=err.message});
+</script>
+</body>
+</html>
