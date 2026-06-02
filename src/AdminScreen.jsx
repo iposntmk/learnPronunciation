@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState, useCallback, useDeferredValue } from 'react'
-import { read, utils, writeFile } from 'xlsx'
 import { CheckSquare, ChevronLeft, Download, Plus, RefreshCw, Search, Square, Trash2, Flag } from 'lucide-react'
 import {
   GENERIC_VIETNAMESE_DEFINITIONS,
@@ -36,6 +35,12 @@ const WORDS_CACHE_KEY = 'admin_words_cache_v2'
 const STRESS_CHARS = ["ˈ", "ˌ", "'", "ʹ", "´"]
 const WORDS_PAGE_SIZE = 150
 const SENTENCES_PAGE_SIZE = 100
+let xlsxPromise = null
+
+function loadXlsx() {
+  if (!xlsxPromise) xlsxPromise = import('xlsx')
+  return xlsxPromise
+}
 
 function loadCachedWords() {
   try {
@@ -615,6 +620,7 @@ export default function AdminScreen({ profile, onBack }) {
     setMessage('')
     try {
       const buf = await file.arrayBuffer()
+      const { read, utils } = await loadXlsx()
       const workbook = read(buf)
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const rows = utils.sheet_to_json(sheet, { defval: '' })
@@ -659,7 +665,8 @@ export default function AdminScreen({ profile, onBack }) {
     })
   }
 
-  const exportWords = () => {
+  const exportWords = async () => {
+    const { utils, writeFile } = await loadXlsx()
     const rows = displayedWords.map(item => ({
       word: item.word || '',
       language: item.language || 'english',
@@ -688,7 +695,8 @@ export default function AdminScreen({ profile, onBack }) {
     writeFile(workbook, `pronunciation-${suffix}.xlsx`)
   }
 
-  const downloadImportTemplate = () => {
+  const downloadImportTemplate = async () => {
+    const { utils, writeFile } = await loadXlsx()
     const rows = [
       {
         word: 'example',
@@ -732,6 +740,7 @@ export default function AdminScreen({ profile, onBack }) {
     setMessage('')
     try {
       const buf = await file.arrayBuffer()
+      const { read, utils } = await loadXlsx()
       const workbook = read(buf)
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const rows = utils.sheet_to_json(sheet, { defval: '' })
@@ -768,7 +777,8 @@ export default function AdminScreen({ profile, onBack }) {
     }
   }
 
-  const exportSentences = () => {
+  const exportSentences = async () => {
+    const { utils, writeFile } = await loadXlsx()
     const rows = sentences.map(item => ({
       sentence: item.sentence || '',
       language: item.language || 'english',
@@ -783,7 +793,8 @@ export default function AdminScreen({ profile, onBack }) {
     writeFile(workbook, 'pronunciation-sentences.xlsx')
   }
 
-  const downloadSentenceTemplate = () => {
+  const downloadSentenceTemplate = async () => {
+    const { utils, writeFile } = await loadXlsx()
     const rows = [
       {
         sentence: 'Could you speak a little more slowly?',
@@ -815,6 +826,7 @@ export default function AdminScreen({ profile, onBack }) {
     setMessage('')
     try {
       const buf = await file.arrayBuffer()
+      const { read, utils } = await loadXlsx()
       const workbook = read(buf)
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const rows = utils.sheet_to_json(sheet, { defval: '' })
@@ -847,7 +859,8 @@ export default function AdminScreen({ profile, onBack }) {
     }
   }
 
-  const handleDownloadCategoryTemplate = () => {
+  const handleDownloadCategoryTemplate = async () => {
+    const { utils, writeFile } = await loadXlsx()
     const wb = utils.book_new()
     const ws = utils.aoa_to_sheet([
       ['name', 'slug', 'level', 'description'],

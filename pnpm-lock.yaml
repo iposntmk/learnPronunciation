@@ -20,9 +20,6 @@ importers:
       microsoft-cognitiveservices-speech-sdk:
         specifier: ^1.49.0
         version: 1.49.0
-      pdf-parse:
-        specifier: ^2.4.5
-        version: 2.4.5
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -42,6 +39,9 @@ importers:
       autoprefixer:
         specifier: ^10.4.19
         version: 10.5.0(postcss@8.5.14)
+      pdf-parse:
+        specifier: ^2.4.5
+        version: 2.4.5
       postcss:
         specifier: ^8.4.40
         version: 8.5.14

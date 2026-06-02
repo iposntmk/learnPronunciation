@@ -30,6 +30,18 @@ function showMobileUrl({ secure = false } = {}) {
   }
 }
 
+function manualChunks(id) {
+  const normalized = id.replace(/\\/g, '/')
+  if (!normalized.includes('/node_modules/')) return undefined
+  if (normalized.includes('/react/') || normalized.includes('/react-dom/') || normalized.includes('/scheduler/')) return 'react-vendor'
+  if (normalized.includes('/@supabase/')) return 'supabase'
+  if (normalized.includes('/lucide-react/')) return 'icons'
+  if (normalized.includes('/microsoft-cognitiveservices-speech-sdk/')) return 'azure-speech'
+  if (normalized.includes('/@huggingface/transformers/')) return 'transformers'
+  if (normalized.includes('/xlsx/')) return 'xlsx'
+  return 'vendor'
+}
+
 export default defineConfig({
   base: process.env.VERCEL ? '/' : '/learnPronunciation/',
   plugins: [
@@ -49,5 +61,12 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['@huggingface/transformers'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks,
+      },
+    },
   },
 })

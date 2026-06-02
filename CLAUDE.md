@@ -102,14 +102,6 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 ```
 
-**Optional** (for practice word images):
-```
-VITE_POLLINATIONS_API_KEY=         # Pollinations publishable key only
-VITE_POLLINATIONS_IMAGE_MODEL=
-VITE_GOOGLE_IMAGE_SEARCH_API_KEY=  # Google Custom Search JSON API key
-VITE_GOOGLE_IMAGE_SEARCH_CX=       # Custom Search engine ID
-```
-
 Supabase client is initialized in `src/supabaseClient.js`. The dev server runs on HTTPS by default (via `@vitejs/plugin-basic-ssl`).
 
 ### Encoding — UTF-8 (quan trọng)

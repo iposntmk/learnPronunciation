@@ -1,10 +1,9 @@
 import React, { Suspense, lazy, useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react'
-import { Mic, Volume2, Search, ChevronLeft, ChevronRight, BookOpen, Library, ExternalLink, Play, Square, Home, Plus, Minus, Settings, Shield, LogOut, Pencil } from 'lucide-react'
+import { Mic, Volume2, Search, ChevronLeft, ChevronRight, BookOpen, Library, Square, Home, Plus, Minus, Settings, Shield, LogOut, Pencil } from 'lucide-react'
 import {
-  SOUNDS, VOWEL_GROUPS, CONSONANT_GROUPS,
-  SPANISH_SOUNDS, SPANISH_VOWEL_GROUPS, SPANISH_CONSONANT_GROUPS, SPANISH_PHONEME_INFO,
-  ITALIAN_SOUNDS, ITALIAN_VOWEL_GROUPS, ITALIAN_CONSONANT_GROUPS, ITALIAN_PHONEME_INFO,
-  FRENCH_SOUNDS,  FRENCH_VOWEL_GROUPS,  FRENCH_CONSONANT_GROUPS,  FRENCH_PHONEME_INFO,
+  SPANISH_PHONEME_INFO,
+  ITALIAN_PHONEME_INFO,
+  FRENCH_PHONEME_INFO,
 } from './data.js'
 import { speakNeural, speakPhoneme } from './tts.js'
 import AuthGate from './AuthGate.jsx'
@@ -12,9 +11,7 @@ import ScoreCircle from './components/common/ScoreCircle.jsx'
 import AzureUsageBadge from './components/common/AzureUsageBadge.jsx'
 import LevelCombobox from './components/common/LevelCombobox.jsx'
 import BottomNav from './components/layout/BottomNav.jsx'
-import SentenceLibraryScreen from './components/sentence/SentenceLibraryScreen.jsx'
-import PracticeSentenceScreen from './components/sentence/PracticeSentenceScreen.jsx'
-import { DICTIONARY_CACHE_KEY, DICTIONARY_CATEGORIES_CACHE_KEY, DICTIONARY_PAGE_SIZE, buildSupabaseWordDetail, buildTranslateFallbackDetail, dictionaryWordKey, isUsefulWordMeaning, loadDictionaryCache, practiceExampleForLanguage, saveDictionaryCache, searchDictionaryEntries, supabaseWordToEntry } from './utils/dictionaryHelpers.js'
+import { DICTIONARY_CACHE_KEY, DICTIONARY_CATEGORIES_CACHE_KEY, DICTIONARY_PAGE_SIZE, buildSupabaseWordDetail, buildTranslateFallbackDetail, dictionaryWordKey, isUsefulWordMeaning, loadDictionaryCache, saveDictionaryCache, searchDictionaryEntries, supabaseWordToEntry } from './utils/dictionaryHelpers.js'
 import RecordingConsole from './components/practice/RecordingConsole.jsx'
 import WordPhonemeGrid from './components/practice/WordPhonemeGrid.jsx'
 import WordHeader from './components/practice/WordHeader.jsx'
@@ -27,6 +24,8 @@ import StressFeedbackPanel from './components/practice/StressFeedbackPanel.jsx'
 import { scoreBg, scoreColor, scoreTextBg } from './utils/scoring/scoreUi.js'
 import { formatIpa } from './utils/phonemes/phonemeFormat.js'
 import { cleanPracticeWord } from './utils/words/wordNormalize.js'
+import { buildWordRelations, buildWordStructures } from './utils/words/wordRelations.js'
+import { fetchJsonOrNull, fetchVietnameseTranslation, fetchWordStudyFields } from './utils/words/wordStudyFields.js'
 import { DEFAULT_PRACTICE_SETTINGS } from './utils/storage/practiceSettingsStorage.js'
 import { loadIncorrectWordReports, saveIncorrectWordReports } from './utils/storage/incorrectWordReportsStorage.js'
 import { AZURE_TO_LANGUAGE, DICTIONARY_LANGUAGES, LANGUAGE_FLAG, LANGUAGE_LABEL, LANGUAGE_SHORT, LANGUAGE_TO_APP_LANG, LANGUAGE_TO_AZURE } from './utils/constants/languages.js'
@@ -39,61 +38,11 @@ import { supabase } from './supabaseClient.js'
 import { LEVELS, WORD_LANGUAGES, fetchAllWords, getWordByText, listCategories, listLevels, listSentenceTopics, listSentences, listWords, normalizeLanguage, updateWordIpa, updateWordStudyFields, upsertWord } from './supabaseData.js'
 
 const AdminScreen = lazy(() => import('./AdminScreen.jsx'))
-
-// ─── RACHEL'S ENGLISH LINKS ────────────────────────────────────────────────
-
-const RACHEL_URLS = {
-  'iː': 'https://rachelsenglish.com/english-pronounce-ee-vowel/',
-  'ɪ':  'https://rachelsenglish.com/english-pronounce-ih-vowel/',
-  'ɛ':  'https://rachelsenglish.com/english-pronounce-eh-vowel/',
-  'æ':  'https://rachelsenglish.com/english-pronounce-aa-ae-vowel/',
-  'ʌ':  'https://rachelsenglish.com/english-pronounce-uh-butter-vowel/',
-  'ə':  'https://rachelsenglish.com/english-pronounce-schwa/',
-  'ɜː': 'https://rachelsenglish.com/english-pronounce-ur-vowel/',
-  'uː': 'https://rachelsenglish.com/english-pronounce-oo-vowel/',
-  'ʊ':  'https://rachelsenglish.com/english-pronounce-uh-push-vowel/',
-  'ɔː': 'https://rachelsenglish.com/english-pronounce-aw-vowel/',
-  'ɑː': 'https://rachelsenglish.com/english-pronounce-ah-vowel/',
-  'oʊ': 'https://rachelsenglish.com/english-pronounce-oh-diphthong/',
-  'eɪ': 'https://rachelsenglish.com/english-pronounce-ay-diphthong/',
-  'aɪ': 'https://rachelsenglish.com/english-pronounce-ai-diphthong/',
-  'ɔɪ': 'https://rachelsenglish.com/english-pronounce-oy-diphthong/',
-  'aʊ': 'https://rachelsenglish.com/english-pronounce-ow-diphthong/',
-  'ɑːr':'https://rachelsenglish.com/pronounce-ar-orn-etc/',
-  'ɔːr':'https://rachelsenglish.com/pronounce-word-2/',
-  'ɛər':'https://rachelsenglish.com/how-to-pronounce-air/',
-  'ɪər':'https://rachelsenglish.com/vowels-ipa-pronunciation-international-phonetic-alphabet/',
-  'p':  'https://rachelsenglish.com/english-pronounce-b-p-consonants/',
-  'b':  'https://rachelsenglish.com/english-pronounce-b-p-consonants/',
-  't':  'https://rachelsenglish.com/english-pronounce-t-d-consonants/',
-  'd':  'https://rachelsenglish.com/english-pronounce-t-d-consonants/',
-  'k':  'https://rachelsenglish.com/english-pronounce-g-k-consonants/',
-  'g':  'https://rachelsenglish.com/english-pronounce-g-k-consonants/',
-  'm':  'https://rachelsenglish.com/english-pronounce-m-consonant/',
-  'n':  'https://rachelsenglish.com/english-pronounce-n-consonant/',
-  'ŋ':  'https://rachelsenglish.com/pronounce-n-n-vs-ng-n/',
-  'f':  'https://rachelsenglish.com/english-pronounce-f-v-consonants/',
-  'v':  'https://rachelsenglish.com/english-pronounce-f-v-consonants/',
-  'θ':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
-  'ð':  'https://rachelsenglish.com/english-pronounce-th-consonants/',
-  's':  'https://rachelsenglish.com/english-pronounce-s-z-consonants/',
-  'z':  'https://rachelsenglish.com/english-pronounce-s-z-consonants/',
-  'ʃ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
-  'ʒ':  'https://rachelsenglish.com/english-pronounce-sh-zh-consonants/',
-  'h':  'https://rachelsenglish.com/english-pronounce-h-consonant/',
-  'r':  'https://rachelsenglish.com/5-tips-for-r-in-american-english/',
-  'j':  'https://rachelsenglish.com/english-pronounce-y-consonant/',
-  'w':  'https://rachelsenglish.com/pronounce-w-consonant/',
-  'l':  'https://rachelsenglish.com/english-pronounce-l-consonant/',
-  'tʃ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
-  'dʒ': 'https://rachelsenglish.com/english-pronounce-ch-jj-sounds/',
-  'ɾ':  'https://rachelsenglish.com/t-pronunciations/',
-}
-
-// YouTube search URL for Rachel's English for a given IPA label
-function rachelYouTubeSearch(label) {
-  return `https://www.youtube.com/results?search_query=rachel%27s+english+${encodeURIComponent(label)}+sound`
-}
+const SoundLibraryScreen = lazy(() => import('./components/sound/SoundScreens.jsx').then(module => ({ default: module.SoundLibraryScreen })))
+const SoundDetailScreen = lazy(() => import('./components/sound/SoundScreens.jsx').then(module => ({ default: module.SoundDetailScreen })))
+const SentenceLibraryScreen = lazy(() => import('./components/sentence/SentenceLibraryScreen.jsx'))
+const PracticeSentenceScreen = lazy(() => import('./components/sentence/PracticeSentenceScreen.jsx'))
+const APP_LANG_TO_AZURE = { en: 'en-US', es: 'es-ES', it: 'it-IT', fr: 'fr-FR' }
 
 // ─── PHONEME ENGINE ────────────────────────────────────────────────────────
 
@@ -802,292 +751,6 @@ function buildPhonemes(pairs, infoMap) {
     .filter(p => p.ipa)
 }
 
-// ─── AUDIO HELPERS ────────────────────────────────────────────────────────
-
-// ─── UI HELPERS ───────────────────────────────────────────────────────────
-
-
-const GOOGLE_SOURCE_LANGUAGE = {
-  english: 'en',
-  spanish: 'es',
-  italian: 'it',
-  french: 'fr',
-}
-
-function googleTranslateApiUrl(text, language = 'english') {
-  const source = GOOGLE_SOURCE_LANGUAGE[normalizeLanguage(language)] || 'en'
-  return `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${source}&tl=vi&dt=t&q=${encodeURIComponent(text)}`
-}
-
-async function fetchVietnameseTranslation(text, language = 'english') {
-  const resp = await fetch(googleTranslateApiUrl(text, language))
-  if (!resp.ok) throw new Error('Không dịch tự động được.')
-  const data = await resp.json()
-  const translated = Array.isArray(data?.[0])
-    ? data[0].map(part => part?.[0]).filter(Boolean).join('')
-    : ''
-  if (!translated) throw new Error('Không có kết quả dịch.')
-  return translated
-}
-
-async function fetchJsonOrNull(url) {
-  try {
-    const resp = await fetch(url)
-    if (!resp.ok) return null
-    return await resp.json()
-  } catch {
-    return null
-  }
-}
-
-function uniqueCleanList(values, blocked = []) {
-  const blockedSet = new Set(blocked.map(value => String(value).toLowerCase()))
-  const seen = new Set()
-  return values
-    .map(value => String(value || '').trim().toLowerCase())
-    .filter(value => value && !blockedSet.has(value) && /^[a-z][a-z\s'-]*$/i.test(value))
-    .filter(value => {
-      if (seen.has(value)) return false
-      seen.add(value)
-      return true
-    })
-}
-
-function deriveRootWord(word) {
-  const value = String(word || '').trim().toLowerCase()
-  if (!value || value.includes(' ')) return ''
-  const rules = [
-    [/ies$/, 'y'],
-    [/ied$/, 'y'],
-    [/ing$/, ''],
-    [/ed$/, ''],
-    [/ly$/, ''],
-    [/es$/, ''],
-    [/s$/, ''],
-  ]
-  for (const [pattern, replacement] of rules) {
-    if (!pattern.test(value)) continue
-    const root = value.replace(pattern, replacement)
-    if (root.length >= 3 && root !== value) return root
-  }
-  return ''
-}
-
-function flattenDictionaryMeanings(entries) {
-  return (Array.isArray(entries) ? entries : [])
-    .flatMap(entry => entry?.meanings || [])
-    .flatMap(meaning => (meaning?.definitions || []).map(definition => ({
-      partOfSpeech: meaning.partOfSpeech || '',
-      definition: definition.definition || '',
-      example: definition.example || '',
-      synonyms: [...(meaning.synonyms || []), ...(definition.synonyms || [])],
-        antonyms: [...(meaning.antonyms || []), ...(definition.antonyms || [])],
-    })))
-}
-
-function normalizePartOfSpeech(value) {
-  const text = String(value || '').trim().toLowerCase()
-  if (text === 'adjective' || text === 'adj') return 'adjective'
-  if (text === 'adverb' || text === 'adv') return 'adverb'
-  if (text === 'noun' || text === 'n') return 'noun'
-  if (text === 'verb' || text === 'v') return 'verb'
-  if (text === 'phrase' || text === 'idiom') return 'phrase'
-  return text
-}
-
-function partOfSpeechMatches(actual, expected) {
-  const a = normalizePartOfSpeech(actual)
-  const e = normalizePartOfSpeech(expected)
-  if (!e || e === 'other') return true
-  if (e === 'phrase') return a === 'phrase' || a === 'idiom'
-  return a === e
-}
-
-async function fetchWordStudyFields(word, type = 'other', language = 'english') {
-  const normalized = String(word || '').trim().toLowerCase()
-  if (!normalized) throw new Error('Word is required.')
-  const sourceLanguage = normalizeLanguage(language)
-
-  if (sourceLanguage !== 'english') {
-    const vietnameseDefinition = await fetchVietnameseTranslation(normalized, sourceLanguage)
-    return {
-      vietnamese_definition: vietnameseDefinition,
-      example_sentence: practiceExampleForLanguage(normalized, sourceLanguage),
-      root_word: '',
-      family_words: [],
-      synonyms: [],
-      antonyms: [],
-      language: sourceLanguage,
-    }
-  }
-
-  const [dictionaryResult, synonymResult, antonymResult] = await Promise.allSettled([
-    fetchJsonOrNull(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalized)}`),
-    fetchJsonOrNull(`https://api.datamuse.com/words?rel_syn=${encodeURIComponent(normalized)}&max=10`),
-    fetchJsonOrNull(`https://api.datamuse.com/words?rel_ant=${encodeURIComponent(normalized)}&max=10`),
-  ])
-  const dictionaryEntries = dictionaryResult.status === 'fulfilled' ? dictionaryResult.value : null
-  const dictionaryMeanings = flattenDictionaryMeanings(dictionaryEntries)
-  const typeMeanings = dictionaryMeanings.filter(item => partOfSpeechMatches(item.partOfSpeech, type))
-  const scopedMeanings = typeMeanings.length ? typeMeanings : dictionaryMeanings
-  const firstMeaning = scopedMeanings.find(item => item.definition) || null
-  const example = scopedMeanings.find(item => item.example)?.example || `I can use "${normalized}" in a sentence.`
-  const definitionText = firstMeaning?.definition || normalized
-
-  let vietnameseDefinition = type === 'other'
-    ? await fetchVietnameseTranslation(normalized, sourceLanguage)
-    : ''
-  if (!vietnameseDefinition || vietnameseDefinition.toLowerCase() === normalized) {
-    vietnameseDefinition = await fetchVietnameseTranslation(definitionText, sourceLanguage)
-  }
-
-  const rootWord = deriveRootWord(normalized)
-  const familyQuery = rootWord || normalized
-  const familyResult = familyQuery
-    ? await fetchJsonOrNull(`https://api.datamuse.com/words?sp=${encodeURIComponent(familyQuery)}*&max=12`)
-    : null
-
-  const synonyms = uniqueCleanList([
-    ...scopedMeanings.flatMap(item => item.synonyms || []),
-    ...((synonymResult.status === 'fulfilled' && Array.isArray(synonymResult.value)) ? synonymResult.value.map(item => item.word) : []),
-  ], [normalized]).slice(0, 8)
-
-  const antonyms = uniqueCleanList([
-    ...scopedMeanings.flatMap(item => item.antonyms || []),
-    ...((antonymResult.status === 'fulfilled' && Array.isArray(antonymResult.value)) ? antonymResult.value.map(item => item.word) : []),
-  ], [normalized]).slice(0, 8)
-
-  const familyWords = uniqueCleanList(
-    Array.isArray(familyResult) ? familyResult.map(item => item.word) : [],
-    [normalized, rootWord]
-  ).slice(0, 8)
-
-  return {
-    vietnamese_definition: vietnameseDefinition,
-    example_sentence: example,
-    root_word: rootWord,
-    family_words: familyWords,
-    synonyms,
-    antonyms,
-    language: sourceLanguage,
-  }
-}
-
-function uniqueList(items) {
-  const seen = new Set()
-  return items
-    .map(item => String(item || '').trim())
-    .filter(item => {
-      const key = item.toLowerCase()
-      if (!item || seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-}
-
-const WORD_RELATION_OVERRIDES = {
-  good: { family: ['goodness'], synonyms: ['great', 'fine', 'excellent'], antonyms: ['bad', 'poor'] },
-  bad: { family: ['badly'], synonyms: ['poor', 'wrong'], antonyms: ['good', 'excellent'] },
-  happy: { family: ['happiness', 'happily'], synonyms: ['glad', 'pleased'], antonyms: ['sad', 'unhappy'] },
-  sad: { family: ['sadness', 'sadly'], synonyms: ['unhappy', 'upset'], antonyms: ['happy', 'glad'] },
-  fast: { family: ['faster', 'fastest'], synonyms: ['quick', 'rapid'], antonyms: ['slow'] },
-  slow: { family: ['slowly', 'slower'], synonyms: ['gradual'], antonyms: ['fast', 'quick'] },
-  easy: { family: ['easily'], synonyms: ['simple'], antonyms: ['difficult', 'hard'] },
-  difficult: { family: ['difficulty'], synonyms: ['hard', 'challenging'], antonyms: ['easy', 'simple'] },
-  big: { family: ['bigger', 'biggest'], synonyms: ['large', 'great'], antonyms: ['small', 'little'] },
-  small: { family: ['smaller', 'smallest'], synonyms: ['little', 'tiny'], antonyms: ['big', 'large'] },
-  hot: { family: ['heat', 'heated'], synonyms: ['warm'], antonyms: ['cold', 'cool'] },
-  cold: { family: ['coldly'], synonyms: ['cool', 'chilly'], antonyms: ['hot', 'warm'] },
-  clear: { family: ['clearly', 'clarity'], synonyms: ['obvious', 'clean'], antonyms: ['unclear', 'confusing'] },
-  speak: { family: ['speaker', 'speaking', 'speech'], synonyms: ['say', 'talk'], antonyms: ['listen', 'silence'] },
-  learn: { family: ['learner', 'learning', 'learned'], synonyms: ['study', 'practice'], antonyms: ['forget'] },
-  correct: { family: ['correction', 'correctly'], synonyms: ['right', 'accurate'], antonyms: ['wrong', 'incorrect'] },
-  wrong: { family: ['wrongly'], synonyms: ['incorrect'], antonyms: ['right', 'correct'] },
-  start: { family: ['starter', 'starting'], synonyms: ['begin'], antonyms: ['finish', 'end'] },
-  finish: { family: ['finished'], synonyms: ['end', 'complete'], antonyms: ['start', 'begin'] },
-}
-
-const WORD_STRUCTURE_OVERRIDES = {
-  access: [
-    'access to sth',
-    'have/get/gain access to sth',
-    'provide/give access to sth',
-    'access a file/database/system/account',
-  ],
-  suppose: [
-    'be supposed to do sth',
-    'suppose that + clause',
-    'I suppose so / I suppose not',
-  ],
-  supposed: [
-    'be supposed to do sth',
-    'be supposed to be + adj/noun',
-    'not be supposed to do sth',
-  ],
-  speak: [
-    'speak to sb',
-    'speak with sb',
-    'speak about sth',
-    'speak English clearly',
-  ],
-  listen: [
-    'listen to sb/sth',
-    'listen for sth',
-    'listen carefully',
-  ],
-  look: [
-    'look at sb/sth',
-    'look for sb/sth',
-    'look like sb/sth',
-  ],
-  depend: [
-    'depend on sb/sth',
-    'depend on sb to do sth',
-  ],
-  interested: [
-    'be interested in sth',
-    'be interested in doing sth',
-  ],
-  good: [
-    'be good at sth/doing sth',
-    'be good for sb/sth',
-    'be good to sb',
-  ],
-  afraid: [
-    'be afraid of sb/sth',
-    'be afraid to do sth',
-    'be afraid that + clause',
-  ],
-}
-
-function baseWordForms(word) {
-  const key = word.toLowerCase().trim()
-  const forms = new Set([key])
-  if (key.endsWith('ing') && key.length > 5) forms.add(key.slice(0, -3))
-  if (key.endsWith('ed') && key.length > 4) forms.add(key.slice(0, -2))
-  if (key.endsWith('ly') && key.length > 4) forms.add(key.slice(0, -2))
-  if (key.endsWith('ness') && key.length > 6) forms.add(key.slice(0, -4))
-  if (key.endsWith('s') && key.length > 3) forms.add(key.slice(0, -1))
-  return [...forms]
-}
-
-function buildWordRelations(word, detail = null) {
-  const key = word.toLowerCase().trim()
-  const override = WORD_RELATION_OVERRIDES[key] || {}
-  const detailRelations = detail?.relations || {}
-
-  const explicitRoot = String(detailRelations.rootWord || '').trim().toLowerCase()
-  const derivedRoot = explicitRoot || deriveRootWord(key)
-  const rootWord = derivedRoot && derivedRoot !== key ? derivedRoot : ''
-
-  return {
-    rootWord,
-    family: uniqueList([...(detailRelations.family || []), ...(override.family || [])]).slice(0, 8),
-    synonyms: uniqueList([...(detailRelations.synonyms || []), ...(override.synonyms || [])]).slice(0, 8),
-    antonyms: uniqueList([...(detailRelations.antonyms || []), ...(override.antonyms || [])]).slice(0, 8),
-  }
-}
-
 function looksLikeIpaForScoring(raw, language = 'english') {
   const value = String(raw || '').trim()
   if (!value) return false
@@ -1132,12 +795,6 @@ function phonemesFromSupabaseIpa(rawIpa, language = 'english', word = '') {
     audioOffset: null,
     audioDuration: null,
   }))
-}
-
-function buildWordStructures(word) {
-  const key = word.toLowerCase().trim()
-  const forms = baseWordForms(key)
-  return uniqueList(forms.flatMap(form => WORD_STRUCTURE_OVERRIDES[form] || [])).slice(0, 6)
 }
 
 // ─── PRONUNCIATION PRACTICE (shared) ─────────────────────────────────────
@@ -1497,167 +1154,6 @@ function PronunciationPractice({
 }
 
 // ─── SCREENS ──────────────────────────────────────────────────────────────
-
-const LANG_CONFIG = {
-  en: { label: '🇺🇸 EN', sounds: SOUNDS,        vowelGroups: VOWEL_GROUPS,          consonantGroups: CONSONANT_GROUPS,         azureCode: 'en-US', subtitle: '48 âm chuẩn tiếng Anh' },
-  es: { label: '🇪🇸 ES', sounds: SPANISH_SOUNDS, vowelGroups: SPANISH_VOWEL_GROUPS,  consonantGroups: SPANISH_CONSONANT_GROUPS, azureCode: 'es-ES', subtitle: 'Tiếng Tây Ban Nha' },
-  it: { label: '🇮🇹 IT', sounds: ITALIAN_SOUNDS, vowelGroups: ITALIAN_VOWEL_GROUPS,  consonantGroups: ITALIAN_CONSONANT_GROUPS, azureCode: 'it-IT', subtitle: 'Tiếng Ý' },
-  fr: { label: '🇫🇷 FR', sounds: FRENCH_SOUNDS,  vowelGroups: FRENCH_VOWEL_GROUPS,   consonantGroups: FRENCH_CONSONANT_GROUPS,  azureCode: 'fr-FR', subtitle: 'Tiếng Pháp' },
-}
-
-function SoundLibraryScreen({ lang, onSelectSound, onGoDict, onChangeLang }) {
-  const [tab, setTab] = useState('vowels')
-  const cfg = LANG_CONFIG[lang]
-  const groups = tab === 'vowels' ? cfg.vowelGroups : cfg.consonantGroups
-  const sounds = cfg.sounds.filter(s => tab === 'vowels' ? s.type === 'vowel' : s.type === 'consonant')
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
-      {/* Header */}
-      <div className="px-4 pt-10 pb-3">
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Sound Library</h1>
-            <p className="text-white/40 text-sm">{cfg.subtitle}</p>
-          </div>
-          <AzureUsageBadge />
-        </div>
-        {/* Language selector */}
-        <div className="flex gap-2 mt-3">
-          {Object.entries(LANG_CONFIG).map(([key, c]) => (
-            <button key={key} onClick={() => { onChangeLang(key); setTab('vowels') }}
-              className={`flex-1 py-2 rounded-2xl text-sm font-semibold transition-all ${lang === key ? 'bg-white text-gray-900' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}>
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Vowel / Consonant tabs */}
-      <div className="px-4 mb-4 flex gap-2">
-        {['vowels','consonants'].map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-2.5 rounded-2xl font-semibold text-sm transition-all ${tab === t ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}>
-            {t === 'vowels'
-              ? `Nguyên Âm (${cfg.sounds.filter(s=>s.type==='vowel').length})`
-              : `Phụ Âm (${cfg.sounds.filter(s=>s.type==='consonant').length})`}
-          </button>
-        ))}
-      </div>
-
-      {/* Sound groups */}
-      {groups.map(g => {
-        const groupSounds = sounds.filter(s => s.group === g.key)
-        if (!groupSounds.length) return null
-        return (
-          <div key={g.key} className="mb-6">
-            <div className="px-4 mb-3 flex items-center gap-2">
-              <span className="text-white/80 font-semibold text-sm">{g.label}</span>
-              <span className="text-white/30 text-xs">{groupSounds.length} âm</span>
-            </div>
-            <div className="px-4 grid grid-cols-4 gap-2">
-              {groupSounds.map(s => (
-                <button key={s.id} onClick={() => onSelectSound(s)}
-                  className={`relative rounded-2xl p-3 flex flex-col items-center gap-1 bg-gradient-to-b ${s.grad} active:scale-95 transition-transform shadow-lg`}>
-                  <span className="text-white font-bold text-base">{s.label}</span>
-                  <span className="text-white/60 font-mono text-xs">/{s.ipa}/</span>
-                  {s.hard && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-yellow-400 rounded-full" />}
-                </button>
-              ))}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function SoundDetailScreen({ sound, lang, onBack, onPracticeWord }) {
-  const azureCode = LANG_CONFIG[lang]?.azureCode || 'en-US'
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-[#0f0f1a] to-[#0f0f1a] pb-24">
-      {/* Back */}
-      <div className="px-4 pt-6 pb-2 flex items-center gap-3">
-        <button onClick={onBack} className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-white/70 hover:bg-white/10 transition-colors">
-          <ChevronLeft size={20} />
-        </button>
-        <span className="text-white/50 text-sm">{sound.group}</span>
-      </div>
-
-      {/* Sound card */}
-      <div className={`mx-4 rounded-3xl p-6 bg-gradient-to-br ${sound.grad} mb-6`}>
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <div className="text-5xl font-bold text-white">{sound.label}</div>
-            <div className="text-white/70 font-mono text-xl">/{sound.ipa}/</div>
-          </div>
-          <button onClick={() => speakNeural(sound.words[0].word, azureCode)} className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center active:scale-95 transition-transform">
-            <Volume2 size={26} className="text-white" />
-          </button>
-        </div>
-        {sound.hard && <span className="inline-block bg-yellow-400/20 border border-yellow-400/40 text-yellow-300 text-xs rounded-lg px-2 py-0.5">★ Khó với người Việt</span>}
-        <div className="mt-4 bg-white/10 rounded-2xl p-3">
-          <p className="text-white/90 text-sm leading-relaxed">{sound.tip}</p>
-        </div>
-      </div>
-
-      {/* Learn more links (English only) */}
-      {lang === 'en' && (
-        <div className="px-4 mb-6">
-          <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Học thêm</div>
-          <div className="flex flex-col gap-2">
-            {RACHEL_URLS[sound.ipa] && (
-              <a href={RACHEL_URLS[sound.ipa]} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 hover:bg-white/10 transition-colors active:scale-98">
-                <div className="w-8 h-8 rounded-xl bg-rose-500/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-rose-400 text-xs font-bold">RE</span>
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="text-white/80 text-sm font-medium">Rachel's English</div>
-                  <div className="text-white/40 text-xs">Hướng dẫn chi tiết âm /{sound.ipa}/</div>
-                </div>
-                <ExternalLink size={14} className="text-white/30" />
-              </a>
-            )}
-            <a href={rachelYouTubeSearch(sound.label)} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 hover:bg-white/10 transition-colors active:scale-98">
-              <div className="w-8 h-8 rounded-xl bg-red-600/20 flex items-center justify-center flex-shrink-0">
-                <Play size={14} className="text-red-400 fill-red-400" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="text-white/80 text-sm font-medium">YouTube — Rachel's English</div>
-                <div className="text-white/40 text-xs">Video hướng dẫn âm {sound.label}</div>
-              </div>
-              <ExternalLink size={14} className="text-white/30" />
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* Practice words */}
-      <div className="px-4">
-        <div className="text-white/60 text-xs uppercase tracking-wider mb-3 font-semibold">Luyện tập với từ</div>
-        <div className="flex flex-col gap-3">
-          {sound.words.map((w, idx) => (
-            <button key={w.word} onClick={() => onPracticeWord(w, idx)}
-              className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl px-4 py-4 active:scale-98 hover:bg-white/8 transition-all text-left">
-              <div className="flex-1">
-                <div className="text-white font-semibold">{w.word}</div>
-                <div className="text-white/40 text-sm">{w.meaning}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={e => { e.stopPropagation(); speakNeural(w.word, azureCode) }} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
-                  <Volume2 size={14} className="text-white/60" />
-                </button>
-                <div className="text-white/20 text-lg">›</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function PracticeWordScreen({ word, meaning, lang, prebuiltPhonemes, strictLookup = false, detail = null, source = null, onBack, onHome, onLibrary, onDictionary, onNext, onPrev, onSearchWord, onScoreResult, practiceSettings, recordingDurationSetting }) {
   const [supabaseDetail, setSupabaseDetail] = useState(null)
@@ -2473,7 +1969,7 @@ function MainApp({ profile }) {
     saveSentenceResult: handleSentencePronunciationResult,
   } = useSentenceProgress()
 
-  const azureCode = LANG_CONFIG[lang].azureCode
+  const azureCode = APP_LANG_TO_AZURE[lang] || 'en-US'
 
   const handleSelectSound = (sound) => { setSelectedSound(sound); setScreen('soundDetail') }
   const handlePracticeWord = (w, idx = 0) => { setPracticeWord(w); setPracticeWordIdx(idx); setScreen('practiceWord') }
@@ -2529,7 +2025,9 @@ function MainApp({ profile }) {
         <LogOut size={16} />
       </button>
       {screen === 'library' && (
-        <SoundLibraryScreen lang={lang} onSelectSound={handleSelectSound} onGoDict={() => handleNavigate('dictionary')} onChangeLang={handleChangeLang} />
+        <Suspense fallback={<div className="px-4 py-6 text-sm text-white/70">Loading sound library...</div>}>
+          <SoundLibraryScreen lang={lang} onSelectSound={handleSelectSound} onChangeLang={handleChangeLang} />
+        </Suspense>
       )}
       {screen === 'admin' && (
         <Suspense fallback={<div className="px-4 py-6 text-sm text-white/70">Loading admin tools...</div>}>
@@ -2537,7 +2035,9 @@ function MainApp({ profile }) {
         </Suspense>
       )}
       {screen === 'soundDetail' && selectedSound && (
-        <SoundDetailScreen sound={selectedSound} lang={lang} onBack={() => setScreen('library')} onPracticeWord={handlePracticeWord} />
+        <Suspense fallback={<div className="px-4 py-6 text-sm text-white/70">Loading sound...</div>}>
+          <SoundDetailScreen sound={selectedSound} lang={lang} onBack={() => setScreen('library')} onPracticeWord={handlePracticeWord} />
+        </Suspense>
       )}
       {screen === 'practiceWord' && practiceWord && (
         <PracticeWordScreen
@@ -2574,19 +2074,23 @@ function MainApp({ profile }) {
         />
       )}
       {screen === 'sentences' && (
-        <SentenceLibraryScreen
-          sentenceProgress={sentenceProgress}
-          onPracticeSentence={handlePracticeSentence}
-        />
+        <Suspense fallback={<div className="px-4 py-6 text-sm text-white/70">Loading sentences...</div>}>
+          <SentenceLibraryScreen
+            sentenceProgress={sentenceProgress}
+            onPracticeSentence={handlePracticeSentence}
+          />
+        </Suspense>
       )}
       {screen === 'practiceSentence' && practiceSentence && (
-        <PracticeSentenceScreen
-          sentenceItem={practiceSentence}
-          onBack={() => setScreen('sentences')}
-          onSaveResult={(result) => handleSentencePronunciationResult(practiceSentence.id, result)}
-          onPracticeWord={handlePracticeSentenceWord}
-          recordingDurationSetting={sentenceRecordingDurationSetting}
-        />
+        <Suspense fallback={<div className="px-4 py-6 text-sm text-white/70">Loading practice...</div>}>
+          <PracticeSentenceScreen
+            sentenceItem={practiceSentence}
+            onBack={() => setScreen('sentences')}
+            onSaveResult={(result) => handleSentencePronunciationResult(practiceSentence.id, result)}
+            onPracticeWord={handlePracticeSentenceWord}
+            recordingDurationSetting={sentenceRecordingDurationSetting}
+          />
+        </Suspense>
       )}
       <BottomNav
         screen={screen}

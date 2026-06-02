@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { scoreWord } from '../scorer.js'
 import { useAudioRecorder } from './useAudioRecorder.js'
 
 export function useWordPronunciation({
@@ -45,6 +44,7 @@ export function useWordPronunciation({
       onRecorded: async blob => {
         setPhase('scoring')
         try {
+          const { scoreWord } = await import('../scorer.js')
           const data = await scoreWord(blob, phonemes, lang, { referenceText })
           setResult(data)
           setPhase('result')

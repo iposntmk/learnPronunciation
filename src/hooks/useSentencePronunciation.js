@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { scoreSentence } from '../scorer.js'
 import { compactSentenceResultForSave } from '../utils/scoring/sentenceResult.js'
 import { useAudioRecorder } from './useAudioRecorder.js'
 
@@ -46,6 +45,7 @@ export function useSentencePronunciation({
       onRecorded: async blob => {
         setPhase('scoring')
         try {
+          const { scoreSentence } = await import('../scorer.js')
           const nextResult = await scoreSentence(blob, sentenceText, lang)
           setResult(nextResult)
           setPhase('result')
