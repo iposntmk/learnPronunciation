@@ -80,7 +80,7 @@ export async function handleAzureWord(req, res) {
       audio,
       referenceText,
       language: fields.language || 'en-US',
-      prosody: false,
+      prosody: true,
     })
     return json(res, 200, normalizeWordResult(nbest, parsePhonemes(fields.phonemes)))
   } catch (err) {

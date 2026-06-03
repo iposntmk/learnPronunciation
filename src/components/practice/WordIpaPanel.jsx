@@ -24,17 +24,6 @@ export default function WordIpaPanel({
     <>
       <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
         <div className={`${compact ? 'text-2xl' : 'text-3xl'} text-cyan-100/90 font-mono font-semibold break-all leading-tight`}>/{phonemes.map(formatIpa).join('')}/</div>
-        {hasUnverifiedIpa && phase === 'ready' && (
-          <label className={`shrink-0 rounded-xl border px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold active:scale-95 ${useGuessedIpaForScore ? 'bg-amber-400/20 border-amber-300/50 text-amber-100' : 'bg-white/5 border-white/10 text-white/55'}`}>
-            <input
-              type="checkbox"
-              checked={useGuessedIpaForScore}
-              onChange={event => setUseGuessedIpaForScore(event.target.checked)}
-              className="accent-amber-300"
-            />
-            Use this IPA for score
-          </label>
-        )}
         {showIncorrectAction && (
           <label className={`shrink-0 rounded-xl border px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold active:scale-95 ${isReportedIncorrect ? 'bg-red-500/20 border-red-400/40 text-red-200' : 'bg-white/5 border-white/10 text-white/55'}`}>
             <input

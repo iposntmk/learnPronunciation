@@ -1,5 +1,5 @@
-import { ChevronLeft } from 'lucide-react'
-import { speakPhoneme } from '../../tts.js'
+import { ChevronLeft, Mic, Play, Square, Volume2 } from 'lucide-react'
+import { speakNeural, speakPhoneme } from '../../tts.js'
 import { normalizeLanguage } from '../../supabaseData.js'
 import { useSentencePronunciation } from '../../hooks/useSentencePronunciation.js'
 import { cleanPracticeWord } from '../../utils/words/wordNormalize.js'
@@ -87,7 +87,7 @@ export default function PracticeSentenceScreen({ sentenceItem, onBack, onSaveRes
               {wordRows.length > 0 && (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-white/45 text-[11px] uppercase tracking-wide">Azure Sentence</div>
+                    <div className="text-white/45 text-[11px] uppercase tracking-wide">Word scores</div>
                     <div className="text-white/35 text-[11px]">tap tung tu</div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -156,32 +156,59 @@ export default function PracticeSentenceScreen({ sentenceItem, onBack, onSaveRes
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#0f0f1a]/95 backdrop-blur border-t border-white/10 px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={playbackRecording}
-            disabled={!recordingUrl || isPlayingBack}
-            className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white/80 disabled:opacity-40"
-          >
-            {isPlayingBack ? 'Playing...' : 'Play'}
+      <div className="fixed left-1/2 bottom-[4.75rem] z-30 w-full max-w-md -translate-x-1/2 px-4 pt-3 pb-3 flex flex-col gap-3 rounded-t-[2rem] bg-gradient-to-t from-[#0f0f1a] via-[#0f0f1a]/95 to-transparent">
+        {(phase === 'ready' || phase === 'recording') && (
+          <button onClick={() => speakNeural(sentenceItem.sentence, lang)} className="w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl py-3 flex items-center justify-center gap-2 active:scale-95 transition-transform">
+            <Volume2 size={18} />
+            Model Audio
           </button>
-          {phase === 'idle' && (
-            <button type="button" onClick={startRecording} className="flex-1 rounded-2xl bg-white text-gray-950 px-4 py-3 text-sm font-semibold">
-              Record
+        )}
+
+        {phase === 'scoring' && (
+          <>
+            {recordingUrl && (
+              <button onClick={playbackRecording}
+                className={`w-full rounded-2xl py-3 flex items-center justify-center gap-2 active:scale-95 transition-transform border ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}>
+                {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
+                {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
+              </button>
+            )}
+            <div className="w-full rounded-2xl py-3 bg-white/5 border border-white/10 text-white/50 flex items-center justify-center gap-2">
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
+              Analyzing pronunciation...
+            </div>
+          </>
+        )}
+
+        {phase === 'result' && (
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => speakNeural(sentenceItem.sentence, lang)} className="w-full bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-2xl py-3 flex items-center justify-center gap-2 active:scale-95 transition-transform">
+              <Volume2 size={16} />
+              Model Audio
             </button>
-          )}
-          {phase === 'recording' && (
-            <button type="button" onClick={stopRecording} className="flex-1 rounded-2xl bg-red-500 text-white px-4 py-3 text-sm font-semibold">
-              Stop {countdown > 0 ? `(${countdown}s)` : ''}
+            <button onClick={playbackRecording} disabled={!recordingUrl}
+              className={`w-full rounded-2xl py-3 flex items-center justify-center gap-2 active:scale-95 transition-transform border disabled:opacity-40 ${isPlayingBack ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' : 'bg-green-600/20 border-green-500/30 text-green-300'}`}>
+              {isPlayingBack ? <Square size={16} /> : <Play size={16} />}
+              {isPlayingBack ? 'Stop Recording' : 'Your Recording'}
             </button>
-          )}
-          {phase === 'scoring' && (
-            <button type="button" disabled className="flex-1 rounded-2xl bg-white/10 text-white/50 px-4 py-3 text-sm font-semibold">
-              Scoring...
-            </button>
-          )}
-        </div>
+          </div>
+        )}
+
+        {(phase === 'ready' || phase === 'result') && (
+          <button onClick={startRecording}
+            className="order-last w-full rounded-2xl py-6 text-xl flex items-center justify-center gap-3 font-bold transition-transform shadow-lg bg-gradient-to-r from-red-600 to-rose-600 text-white active:scale-95 shadow-red-900/30">
+            <Mic size={28} />
+            {result ? 'Record again' : `Speak (${recordingDurationSetting}s)`}
+          </button>
+        )}
+        {phase === 'recording' && (
+          <button onClick={stopRecording}
+            className="order-last w-full bg-red-600/20 border-2 border-red-500/50 rounded-2xl py-6 flex items-center justify-center gap-3 text-red-400 active:scale-95 transition-transform">
+            <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse" />
+            <span className="font-bold text-xl">Speaking...</span>
+            <span className="font-bold tabular-nums text-red-300 text-2xl">{countdown}s</span>
+          </button>
+        )}
       </div>
     </div>
   )

@@ -12,8 +12,20 @@ function syllableStyle(syllable) {
   return 'border-emerald-400/40 bg-emerald-500/10'
 }
 
-export default function StressFeedbackPanel({ feedback = [], assessment = null, compact = false }) {
+export default function StressFeedbackPanel({ feedback = [], assessment = null, prosodyScore = null, compact = false }) {
   const syllables = assessment?.syllables || []
+  // Chế độ chỉ-Azure: không có bảng âm tiết SpeechSuper, chỉ hiện điểm prosody của Azure.
+  if (!assessment && !feedback.length && prosodyScore != null) {
+    return (
+      <div className={`mx-4 ${compact ? 'mt-2' : 'mt-3'} rounded-2xl border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-left`}>
+        <div className="flex items-center justify-between">
+          <div className="text-violet-100 text-xs font-bold uppercase tracking-wide">Prosody (Azure)</div>
+          <div className={`text-xs font-bold ${scoreColor(prosodyScore)}`}>{prosodyScore}/100</div>
+        </div>
+        <div className="mt-1.5 text-[10px] text-violet-200/60">Điểm ngữ điệu/trọng âm tổng thể từ Azure.</div>
+      </div>
+    )
+  }
   if (!feedback.length && !syllables.length) return null
 
   return (

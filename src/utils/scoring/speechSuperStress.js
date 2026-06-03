@@ -138,6 +138,38 @@ function mergeStressFailure(azureResult, reason) {
   }
 }
 
+// Chế độ "chỉ SpeechSuper": không có điểm Azure. Trả overall + bảng trọng âm,
+// phonemes:[] để WordPhonemeGrid hiện IPA nhưng không tô điểm từng ô.
+function speechSuperOnlyResult(speechSuperResult) {
+  if (speechSuperResult.status !== 'success') {
+    return {
+      overall: null,
+      spokenWord: speechSuperResult.referenceText || '',
+      phonemes: [],
+      stressAssessment: speechSuperResult,
+      combinedFeedback: [],
+      stressScore: null,
+    }
+  }
+  return {
+    overall: speechSuperResult.overall ?? speechSuperResult.pronunciationScore ?? null,
+    spokenWord: speechSuperResult.word || speechSuperResult.referenceText || '',
+    phonemes: [],
+    stressAssessment: speechSuperResult,
+    combinedFeedback: generateCombinedFeedback(null, speechSuperResult),
+    stressScore: speechSuperResult.stressScore ?? null,
+  }
+}
+
+export async function assessSpeechSuperOnly(audioBlob, referenceText) {
+  try {
+    return speechSuperOnlyResult(await callSpeechSuper(audioBlob, referenceText))
+  } catch (err) {
+    console.warn('[SpeechSuper] assessment failed:', err.message)
+    return speechSuperOnlyResult({ status: 'failed', provider: 'speechsuper', referenceText, reason: err.message })
+  }
+}
+
 export async function assessWithStress(audioBlob, referenceText, { phonemes = [], language = 'en-US', scoreAzure, onStressUpdate } = {}) {
   if (typeof scoreAzure !== 'function') throw new Error('Missing Azure scoring function.')
   if (language !== 'en-US' || !shouldAssessStress(referenceText, phonemes)) return scoreAzure()

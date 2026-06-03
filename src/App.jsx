@@ -21,6 +21,7 @@ import RootWordBadge from './components/practice/RootWordBadge.jsx'
 import PracticeStatusMessages from './components/practice/PracticeStatusMessages.jsx'
 import PracticeNavigationActions from './components/practice/PracticeNavigationActions.jsx'
 import StressFeedbackPanel from './components/practice/StressFeedbackPanel.jsx'
+import SpeechSuperTrialBanner from './components/practice/SpeechSuperTrialBanner.jsx'
 import { scoreBg, scoreColor, scoreTextBg } from './utils/scoring/scoreUi.js'
 import { formatIpa } from './utils/phonemes/phonemeFormat.js'
 import { cleanPracticeWord } from './utils/words/wordNormalize.js'
@@ -412,7 +413,7 @@ function unsupportedWord(word) {
     isHard: false,
     isStressed: false,
     canScore: false,
-    lookupNote: 'Chưa hỗ trợ từ này trong English dictionary. App sẽ chỉ chấm những từ có IPA đã được kiểm chứng.',
+    lookupNote: 'Từ này chưa có IPA (kể cả đoán theo rule) nên chưa chấm được.',
   }]
 }
 
@@ -732,7 +733,7 @@ function g2p(word) {
       isHard: PHONEME_INFO[p.ipa]?.hard || false,
       isStressed: false,
       canScore: false,
-      lookupNote: 'IPA này được đoán theo rule, không đủ tin cậy để chấm điểm English dictionary.',
+      lookupNote: 'Từ này chưa có trong từ điển — IPA đoán theo rule, vẫn chấm được nhưng có thể chưa chuẩn 100%.',
     }))
 }
 
@@ -828,7 +829,8 @@ function PronunciationPractice({
   const [saveStatus, setSaveStatus] = useState({ loading: false, error: null, saved: false })
   const [useGuessedIpaForScore, setUseGuessedIpaForScore] = useState(false)
   const hasUnverifiedIpa = phonemes.some(p => p.canScore === false && p.ipa && p.ipa !== '?')
-  const canScoreWord = phonemes.length > 0 && phonemes.every(p => (p.canScore !== false || useGuessedIpaForScore) && p.ipa && p.ipa !== '?')
+  // IPA chuẩn lấy từ dictionary API; thiếu thì tự fallback IPA đoán. Chỉ chặn khi không có IPA ('?').
+  const canScoreWord = phonemes.length > 0 && phonemes.every(p => p.ipa && p.ipa !== '?')
   const lookupNote = phonemes.find(p => p.lookupNote)?.lookupNote || null
   // phases: ready → recording → scoring → result
   const [searchVal, setSearchVal] = useState('')
@@ -1048,6 +1050,8 @@ function PronunciationPractice({
     <div className={`flex flex-col ${compact ? 'h-full pb-52' : 'min-h-screen pb-64'}`}>
       <audio ref={audioRef} className="hidden" />
 
+      <SpeechSuperTrialBanner />
+
       {/* Tiêu đề từ + IPA breakdown */}
       <div className={`text-center px-4 ${compact ? 'py-1' : 'py-6'}`}>
         <WordHeader
@@ -1106,7 +1110,7 @@ function PronunciationPractice({
           selectedPhoneme={sel}
           playPhoneme={playPhoneme}
         />
-        <StressFeedbackPanel feedback={result?.combinedFeedback || []} assessment={result?.stressAssessment} compact={compact} />
+        <StressFeedbackPanel feedback={result?.combinedFeedback || []} assessment={result?.stressAssessment} prosodyScore={result?.prosodyScore ?? null} compact={compact} />
       </div>
 
       {/* Kết quả tổng */}

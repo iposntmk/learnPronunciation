@@ -79,6 +79,7 @@ export function normalizeWordResult(nbest, targetPhonemes = []) {
     overall,
     spokenWord,
     stress: null,
+    prosodyScore: firstScore(nbest?.ProsodyScore, pa.ProsodyScore),
     azureIpa: sourcePhonemes.map(item => `${item.stressMark || ''}${item.ipa}`).join(''),
   }
 }
