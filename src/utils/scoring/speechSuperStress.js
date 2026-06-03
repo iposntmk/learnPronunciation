@@ -140,23 +140,30 @@ export function generateCombinedFeedback(azureResult, speechSuperResult) {
 
 export async function assessWithStress(audioBlob, referenceText, { phonemes = [], language = 'en-US', scoreAzure } = {}) {
   if (typeof scoreAzure !== 'function') throw new Error('Missing Azure scoring function.')
-  const azureResult = await scoreAzure()
-  if (language !== 'en-US' || !shouldAssessStress(referenceText, phonemes)) return azureResult
-  try {
-    const speechSuperResult = await callSpeechSuper(audioBlob, referenceText)
+  if (language !== 'en-US' || !shouldAssessStress(referenceText, phonemes)) return scoreAzure()
+
+  // Chạy song song để giảm độ trễ (trước đây gọi nối tiếp = Azure + SpeechSuper cộng dồn)
+  const [azureSettled, stressSettled] = await Promise.allSettled([
+    scoreAzure(),
+    callSpeechSuper(audioBlob, referenceText),
+  ])
+  if (azureSettled.status === 'rejected') throw azureSettled.reason
+  const azureResult = azureSettled.value
+
+  if (stressSettled.status === 'rejected') {
+    console.warn('[SpeechSuper] stress assessment failed:', stressSettled.reason?.message)
     return {
       ...azureResult,
-      stressAssessment: speechSuperResult,
-      combinedFeedback: generateCombinedFeedback(azureResult, speechSuperResult),
-      stressScore: speechSuperResult.stressScore ?? null,
-    }
-  } catch (err) {
-    console.warn('[SpeechSuper] stress assessment failed:', err.message)
-    return {
-      ...azureResult,
-      stressAssessment: { status: 'failed', provider: 'speechsuper', reason: err.message },
+      stressAssessment: { status: 'failed', provider: 'speechsuper', reason: stressSettled.reason?.message },
       combinedFeedback: [],
       stressScore: null,
     }
+  }
+  const speechSuperResult = stressSettled.value
+  return {
+    ...azureResult,
+    stressAssessment: speechSuperResult,
+    combinedFeedback: generateCombinedFeedback(azureResult, speechSuperResult),
+    stressScore: speechSuperResult.stressScore ?? null,
   }
 }
