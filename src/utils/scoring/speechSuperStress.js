@@ -138,11 +138,42 @@ export function generateCombinedFeedback(azureResult, speechSuperResult) {
   return uniqueMessages(messages).slice(0, 3)
 }
 
-export async function assessWithStress(audioBlob, referenceText, { phonemes = [], language = 'en-US', scoreAzure } = {}) {
+function mergeStressSuccess(azureResult, speechSuperResult) {
+  return {
+    ...azureResult,
+    stressAssessment: speechSuperResult,
+    combinedFeedback: generateCombinedFeedback(azureResult, speechSuperResult),
+    stressScore: speechSuperResult.stressScore ?? null,
+  }
+}
+
+function mergeStressFailure(azureResult, reason) {
+  return {
+    ...azureResult,
+    stressAssessment: { status: 'failed', provider: 'speechsuper', reason },
+    combinedFeedback: [],
+    stressScore: null,
+  }
+}
+
+export async function assessWithStress(audioBlob, referenceText, { phonemes = [], language = 'en-US', scoreAzure, onStressUpdate } = {}) {
   if (typeof scoreAzure !== 'function') throw new Error('Missing Azure scoring function.')
   if (language !== 'en-US' || !shouldAssessStress(referenceText, phonemes)) return scoreAzure()
 
-  // Chạy song song để giảm độ trễ (trước đây gọi nối tiếp = Azure + SpeechSuper cộng dồn)
+  // Tiến độ (giải pháp A): trả điểm Azure ngay, chấm trọng âm SpeechSuper chạy nền,
+  // xong thì gọi onStressUpdate để vá kết quả vào UI → người dùng không phải chờ.
+  if (typeof onStressUpdate === 'function') {
+    const azureResult = await scoreAzure()
+    callSpeechSuper(audioBlob, referenceText)
+      .then(speechSuperResult => onStressUpdate(mergeStressSuccess(azureResult, speechSuperResult)))
+      .catch(err => {
+        console.warn('[SpeechSuper] stress assessment failed:', err.message)
+        onStressUpdate(mergeStressFailure(azureResult, err.message))
+      })
+    return azureResult
+  }
+
+  // Mặc định: chạy song song, trả kết quả đã gộp
   const [azureSettled, stressSettled] = await Promise.allSettled([
     scoreAzure(),
     callSpeechSuper(audioBlob, referenceText),
@@ -150,20 +181,8 @@ export async function assessWithStress(audioBlob, referenceText, { phonemes = []
   if (azureSettled.status === 'rejected') throw azureSettled.reason
   const azureResult = azureSettled.value
 
-  if (stressSettled.status === 'rejected') {
-    console.warn('[SpeechSuper] stress assessment failed:', stressSettled.reason?.message)
-    return {
-      ...azureResult,
-      stressAssessment: { status: 'failed', provider: 'speechsuper', reason: stressSettled.reason?.message },
-      combinedFeedback: [],
-      stressScore: null,
-    }
-  }
-  const speechSuperResult = stressSettled.value
-  return {
-    ...azureResult,
-    stressAssessment: speechSuperResult,
-    combinedFeedback: generateCombinedFeedback(azureResult, speechSuperResult),
-    stressScore: speechSuperResult.stressScore ?? null,
-  }
+  return stressSettled.status === 'rejected'
+    ? (console.warn('[SpeechSuper] stress assessment failed:', stressSettled.reason?.message),
+       mergeStressFailure(azureResult, stressSettled.reason?.message))
+    : mergeStressSuccess(azureResult, stressSettled.value)
 }

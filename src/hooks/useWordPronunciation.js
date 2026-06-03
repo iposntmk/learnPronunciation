@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAudioRecorder } from './useAudioRecorder.js'
 
 export function useWordPronunciation({
@@ -15,6 +15,7 @@ export function useWordPronunciation({
   const [errorMsg, setErrorMsg] = useState(null)
   const [result, setResult] = useState(null)
   const [selectedIdx, setSelectedIdx] = useState(null)
+  const attemptRef = useRef(0)
   const {
     audioRef,
     countdown,
@@ -43,9 +44,17 @@ export function useWordPronunciation({
       },
       onRecorded: async blob => {
         setPhase('scoring')
+        const attemptId = ++attemptRef.current
         try {
           const { scoreWord } = await import('../scorer.js')
-          const data = await scoreWord(blob, phonemes, lang, { referenceText })
+          // onStressUpdate: kết quả trọng âm về sau (chạy nền) → vá vào UI mà không chờ.
+          // attemptId chặn race: bỏ qua nếu user đã ghi lần khác.
+          const data = await scoreWord(blob, phonemes, lang, {
+            referenceText,
+            onStressUpdate: stressData => {
+              if (attemptId === attemptRef.current) setResult(stressData)
+            },
+          })
           setResult(data)
           setPhase('result')
           Promise.resolve(onScoreResult?.(data)).catch(err => console.warn('[Supabase] score sync failed:', err.message))
@@ -77,6 +86,7 @@ export function useWordPronunciation({
   }, [playBlobSegment])
 
   const reset = useCallback(() => {
+    attemptRef.current++
     clearRecording()
     setPhase('ready')
     setResult(null)
@@ -85,6 +95,7 @@ export function useWordPronunciation({
   }, [clearRecording])
 
   const resetAndRecord = useCallback(() => {
+    attemptRef.current++
     clearRecording()
     setResult(null)
     setSelectedIdx(null)

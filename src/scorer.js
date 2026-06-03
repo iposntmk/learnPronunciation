@@ -222,7 +222,7 @@ export async function scoreWord(audioBlob, phonemes, language = 'en-US', options
   if (language !== 'en-US') return scoreAzure()
   const { shouldAssessStress, assessWithStress } = await import('./utils/scoring/speechSuperStress.js')
   return shouldAssessStress(referenceText, phonemes)
-    ? assessWithStress(audioBlob, referenceText, { phonemes, language, scoreAzure })
+    ? assessWithStress(audioBlob, referenceText, { phonemes, language, scoreAzure, onStressUpdate: options.onStressUpdate })
     : scoreAzure()
 }
 
