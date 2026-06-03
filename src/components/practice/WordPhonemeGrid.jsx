@@ -33,7 +33,7 @@ export default function WordPhonemeGrid({
               <span className="text-white font-semibold text-sm">{phoneme.text}</span>
               <span className="text-white/45 font-mono text-sm">/{formatIpa(phoneme)}/</span>
               {hasScore && <span className={`text-xs font-bold ${textColor}`}>{scored.score}%</span>}
-              {phoneme.isHard && !hasScore && <span className="text-yellow-400 text-xs">â˜…</span>}
+              {phoneme.isHard && !hasScore && <span className="text-yellow-400 text-xs">★</span>}
             </button>
           )
         })}
