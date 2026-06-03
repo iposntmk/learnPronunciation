@@ -1106,7 +1106,7 @@ function PronunciationPractice({
           selectedPhoneme={sel}
           playPhoneme={playPhoneme}
         />
-        <StressFeedbackPanel feedback={result?.combinedFeedback || []} compact={compact} />
+        <StressFeedbackPanel feedback={result?.combinedFeedback || []} assessment={result?.stressAssessment} compact={compact} />
       </div>
 
       {/* Kết quả tổng */}

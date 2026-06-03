@@ -1,4 +1,4 @@
-import { firstNumber, normalizeSpeechSuperResult, stressFlag } from './speechSuperNormalize.js'
+import { normalizeSpeechSuperResult } from './speechSuperNormalize.js'
 import { audioBlobToPcmWav } from '../audio/audioWav.js'
 
 const STRESS_CONFUSING_WORDS = new Set([
@@ -20,13 +20,6 @@ const STRESS_CONFUSING_WORDS = new Set([
   'subject',
 ])
 
-const KNOWN_PRIMARY_STRESS_INDEX = {
-  english: 0,
-  record: 0,
-  present: 0,
-  university: 3,
-}
-
 const IPA_VOWEL_RE = /[iɪeɛæɑɒɔʌəɜuʊaɐo]/u
 
 function cleanWord(value) {
@@ -45,26 +38,6 @@ function hasVowelSound(phoneme) {
 function countStressBearingGroups(phonemes = []) {
   const groups = phonemes.filter(hasVowelSound).length
   return groups || 0
-}
-
-function expectedStressIndexFromPhonemes(phonemes = []) {
-  let vowelIndex = 0
-  for (const phoneme of phonemes) {
-    if (!hasVowelSound(phoneme)) continue
-    if (phoneme.isStressed) return vowelIndex
-    vowelIndex += 1
-  }
-  return null
-}
-
-function expectedStressIndexFromSyllables(syllables = []) {
-  const hit = syllables.find(syllable => stressFlag(syllable.expectedStress) === true)
-  return hit ? hit.index : null
-}
-
-function actualStressIndexFromSyllables(syllables = []) {
-  const hit = syllables.find(syllable => stressFlag(syllable.actualStress) === true)
-  return hit ? hit.index : null
 }
 
 function uniqueMessages(messages) {
@@ -110,34 +83,41 @@ export async function callSpeechSuper(audioBlob, text) {
 export function generateCombinedFeedback(azureResult, speechSuperResult) {
   const result = normalizeSpeechSuperResult(speechSuperResult, speechSuperResult?.referenceText || azureResult?.spokenWord || '')
   if (result.status !== 'success') return []
-  const word = cleanWord(result.referenceText) || cleanWord(azureResult?.spokenWord) || 'word'
-  const expectedIndex = expectedStressIndexFromSyllables(result.syllables)
-    ?? expectedStressIndexFromPhonemes(azureResult?.phonemes)
-    ?? KNOWN_PRIMARY_STRESS_INDEX[word]
-    ?? null
-  const actualIndex = actualStressIndexFromSyllables(result.syllables)
-  let messages = []
-  if (result.issues.length && actualIndex != null && expectedIndex != null && actualIndex !== expectedIndex) {
-    messages = [`Bạn nhấn sai âm tiết thứ ${actualIndex + 1} của từ "${word}"; từ này cần nhấn âm tiết thứ ${expectedIndex + 1}.`]
-  } else {
-    messages = result.issues.map(issue => {
-      const wrongIndex = firstNumber(issue.actualSyllableIndex, issue.actualIndex, issue.syllableIndex, actualIndex)
-      const correctIndex = firstNumber(issue.expectedSyllableIndex, issue.expectedIndex, expectedIndex)
-      if (wrongIndex != null && correctIndex != null && wrongIndex !== correctIndex) {
-        return `Bạn nhấn sai âm tiết thứ ${wrongIndex + 1} của từ "${word}"; từ này cần nhấn âm tiết thứ ${correctIndex + 1}.`
-      }
-      if (correctIndex != null) {
-        return `Từ "${word}" cần nhấn âm tiết thứ ${correctIndex + 1}; hãy nói âm tiết đó rõ và mạnh hơn.`
-      }
-      return `Trọng âm của từ "${word}" chưa rõ; hãy thử nhấn âm tiết chính mạnh hơn.`
-    })
+  const word = result.word || cleanWord(azureResult?.spokenWord) || 'từ'
+  const syllables = result.syllables || []
+  const messages = []
+
+  // 1. Trọng âm: so sánh âm tiết chuẩn (refStress===1) với âm tiết người đọc nhấn (actualStress===1)
+  const expected = syllables.find(s => s.refStress === 1)
+  const actual = syllables.find(s => s.actualStress === 1)
+  if (expected && actual && expected.index !== actual.index) {
+    messages.push(`Trọng âm sai: bạn nhấn vào âm tiết "${actual.spell}" (thứ ${actual.index + 1}), nhưng "${word}" cần nhấn "${expected.spell}" (thứ ${expected.index + 1}). Đọc "${expected.spell}" to và dài hơn.`)
+  } else if (expected && !actual) {
+    messages.push(`Trọng âm chưa rõ: hãy nhấn mạnh âm tiết "${expected.spell}" (thứ ${expected.index + 1}) — đọc to, cao và dài hơn các âm tiết còn lại.`)
   }
+
+  // 2. Âm đọc sai (mispronunciation substitution): /chuẩn/ nghe thành /sai/
+  for (const m of (result.mispronunciations || []).slice(0, 2)) {
+    if (m.standard && m.mistaken && m.standard !== m.mistaken) {
+      messages.push(`Âm /${m.standard}/ bạn đọc nghe như /${m.mistaken}/; chú ý phát âm /${m.standard}/.`)
+    }
+  }
+
+  // 3. Âm tiết điểm thấp (mà chưa nhắc ở trên)
+  for (const s of syllables.filter(s => s.score != null && s.score < 60).slice(0, 2)) {
+    if (!messages.some(msg => msg.includes(`"${s.spell}"`))) {
+      messages.push(`Âm tiết "${s.spell}" /${s.phonetic}/ còn yếu (${s.score}/100); luyện đọc lại âm tiết này.`)
+    }
+  }
+
+  // 4. Trọng âm tổng còn thấp nhưng chưa bắt được chi tiết
   if (!messages.length && result.stressScore != null && result.stressScore < 65) {
-    messages.push(expectedIndex != null
-      ? `Từ "${word}" cần nhấn mạnh âm tiết thứ ${expectedIndex + 1} (điểm trọng âm ${result.stressScore}/100); hãy nói âm tiết đó to và rõ hơn.`
-      : `Trọng âm của từ "${word}" còn yếu (${result.stressScore}/100); hãy nghe mẫu và nhấn âm tiết chính rõ hơn.`)
+    messages.push(expected
+      ? `Trọng âm "${word}" còn yếu (${result.stressScore}/100); nhấn mạnh âm tiết "${expected.spell}" (thứ ${expected.index + 1}).`
+      : `Trọng âm "${word}" còn yếu (${result.stressScore}/100); hãy nghe mẫu và nhấn âm tiết chính rõ hơn.`)
   }
-  return uniqueMessages(messages).slice(0, 3)
+
+  return uniqueMessages(messages).slice(0, 4)
 }
 
 function mergeStressSuccess(azureResult, speechSuperResult) {
