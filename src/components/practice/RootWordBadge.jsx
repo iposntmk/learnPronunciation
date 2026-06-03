@@ -16,7 +16,7 @@ export default function RootWordBadge({ rootWord, currentWord, onSearchWord }) {
           <Sprout size={12} />
           <span className="text-emerald-200/70">Root:</span>
           <span className="text-emerald-100">{rootWord}</span>
-          <span className="text-emerald-200/70">Â· Practice</span>
+          <span className="text-emerald-200/70">· Practice</span>
         </button>
       ) : (
         <span className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/70">
