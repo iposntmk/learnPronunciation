@@ -117,6 +117,8 @@ export async function handleSpeechSuperPronunciation(req, res) {
     const response = await fetch(SPEECHSUPER_URL, { method: 'POST', headers: { 'Request-Index': '0' }, body: form, signal: controller.signal })
     const rawText = await response.text()
     if (!response.ok) return json(res, 502, { detail: `SpeechSuper API error ${response.status}: ${rawText.slice(0, 200)}` })
+    // DEBUG: dump full SpeechSuper response to inspect real field structure for per-syllable parsing
+    console.log(`[SpeechSuper] raw response for "${text}":`, rawText)
     return json(res, 200, normalizeSpeechSuper(JSON.parse(rawText), text))
   } catch (err) {
     const message = err.name === 'AbortError' ? 'SpeechSuper request timed out.' : err.message

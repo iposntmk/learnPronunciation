@@ -133,7 +133,9 @@ export function generateCombinedFeedback(azureResult, speechSuperResult) {
     })
   }
   if (!messages.length && result.stressScore != null && result.stressScore < 65) {
-    messages.push(`Trọng âm của từ "${word}" còn yếu; hãy nghe mẫu và nhấn âm tiết chính rõ hơn.`)
+    messages.push(expectedIndex != null
+      ? `Từ "${word}" cần nhấn mạnh âm tiết thứ ${expectedIndex + 1} (điểm trọng âm ${result.stressScore}/100); hãy nói âm tiết đó to và rõ hơn.`
+      : `Trọng âm của từ "${word}" còn yếu (${result.stressScore}/100); hãy nghe mẫu và nhấn âm tiết chính rõ hơn.`)
   }
   return uniqueMessages(messages).slice(0, 3)
 }
