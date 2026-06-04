@@ -27,6 +27,20 @@ create table public.profiles (
   updated_at timestamptz not null default now()
 );
 
+create table public.provider_credentials (
+  provider text primary key,
+  app_key_ciphertext text,
+  secret_key_ciphertext text,
+  user_id text not null default 'guest',
+  scoring_mode text not null default 'azure' check (scoring_mode in ('azure', 'speechsuper', 'both')),
+  expires_at timestamptz,
+  last_tested_at timestamptz,
+  last_test_ok boolean,
+  updated_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table public.categories (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -156,6 +170,9 @@ create trigger levels_updated_at before update on public.levels
 for each row execute function public.set_updated_at();
 
 create trigger profiles_updated_at before update on public.profiles
+for each row execute function public.set_updated_at();
+
+create trigger provider_credentials_updated_at before update on public.provider_credentials
 for each row execute function public.set_updated_at();
 
 create trigger categories_updated_at before update on public.categories
@@ -435,6 +452,7 @@ create index sentence_pronunciation_attempts_user_sentence_idx on public.sentenc
 
 alter table public.levels enable row level security;
 alter table public.profiles enable row level security;
+alter table public.provider_credentials enable row level security;
 alter table public.categories enable row level security;
 alter table public.words enable row level security;
 alter table public.user_word_progress enable row level security;
@@ -465,6 +483,9 @@ on public.profiles for all
 to authenticated
 using (public.is_admin())
 with check (public.is_admin());
+
+revoke all on table public.provider_credentials from anon;
+revoke all on table public.provider_credentials from authenticated;
 
 create policy "Authenticated users read categories"
 on public.categories for select

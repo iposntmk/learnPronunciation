@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { elevenLabsStatus } from './elevenLabs.js'
+import { getSpeechSuperCredentialStatus } from './speechSuperCredentials.js'
 
 const ENV_PATH = resolve(process.cwd(), '.env.local')
 
@@ -52,6 +53,28 @@ export function statusPayload() {
       tts: '/azure/tts',
     },
     ...elevenLabsStatus(),
+  }
+}
+
+export async function statusPayloadAsync() {
+  const envStatus = statusPayload()
+  try {
+    const speechSuper = await getSpeechSuperCredentialStatus()
+    return {
+      ...envStatus,
+      configured: speechSuper.configured,
+      speechSuperConfigured: speechSuper.configured,
+      appKeyConfigured: speechSuper.appKeyConfigured,
+      secretKeyConfigured: speechSuper.secretKeyConfigured,
+      userId: speechSuper.userId || envStatus.userId,
+      scoringMode: speechSuper.scoringMode || envStatus.scoringMode,
+      expiresAt: speechSuper.expiresAt || null,
+      lastTestedAt: speechSuper.lastTestedAt || null,
+      lastTestOk: speechSuper.lastTestOk ?? null,
+      credentialSource: speechSuper.source,
+    }
+  } catch {
+    return envStatus
   }
 }
 

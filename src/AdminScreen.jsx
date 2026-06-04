@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useDeferredValue } from 'react'
 import { CheckSquare, ChevronLeft, Download, Plus, RefreshCw, Search, Square, Trash2, Flag } from 'lucide-react'
+import SpeechSuperApiKeysPanel from './components/admin/SpeechSuperApiKeysPanel.jsx'
 import {
   GENERIC_VIETNAMESE_DEFINITIONS,
   LEVELS,
@@ -888,13 +889,13 @@ export default function AdminScreen({ profile, onBack }) {
         <button onClick={onBack} className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center"><ChevronLeft size={20} /></button>
         <div>
           <h1 className="text-xl font-bold">Admin</h1>
-          <p className="text-white/40 text-xs">Words, sentences, categories, users</p>
+          <p className="text-white/40 text-xs">Words, sentences, categories, API keys, users</p>
         </div>
       </div>
 
-      <div className="px-4 flex gap-2 mb-4">
-        {['words', 'sentences', 'categories', 'levels', 'users'].map(item => (
-          <button key={item} onClick={() => setTab(item)} className={`flex-1 rounded-xl py-2 text-sm font-semibold ${tab === item ? 'bg-white text-gray-950' : 'bg-white/10 text-white/60'}`}>
+      <div className="px-4 grid grid-cols-3 gap-2 mb-4 sm:grid-cols-6">
+        {['words', 'sentences', 'categories', 'levels', 'api keys', 'users'].map(item => (
+          <button key={item} onClick={() => setTab(item)} className={`rounded-xl py-2 text-sm font-semibold ${tab === item ? 'bg-white text-gray-950' : 'bg-white/10 text-white/60'}`}>
             {item}
           </button>
         ))}
@@ -1643,6 +1644,8 @@ export default function AdminScreen({ profile, onBack }) {
           </div>
         </div>
       )}
+
+      {tab === 'api keys' && <SpeechSuperApiKeysPanel />}
 
       {tab === 'users' && (
         <div className="px-4 grid gap-2">

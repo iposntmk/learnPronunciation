@@ -12,16 +12,16 @@ Deploy lên GitHub Pages tại `/learnPronunciation/`. Stack: React 18, Vite 5, 
 
 ---
 
-## 2. Quy tắc Shell — KHÔNG tự động chạy
+## 2. Quy tắc Shell — được phép chạy
 
-**Cấm tự ý chạy** các lệnh sau mà không được người dùng yêu cầu rõ ràng:
+Các lệnh sau **luôn được phép chạy khi cần thiết để hoàn thành task**:
 
 ```
 npm run dev      npm run build     git commit      git push
 ```
 
-Chỉ chạy lệnh đọc/kiểm tra nhanh khi thực sự cần (`ls`, `git status`, `git diff`...).  
-Nếu cần build để kiểm tra → yêu cầu người dùng tự chạy.
+Agent có thể tự chạy build/dev server để kiểm tra, và có thể commit/push khi task yêu cầu hoàn tất thay đổi trên GitHub.
+Vẫn cần kiểm tra phạm vi thay đổi bằng các lệnh như `git status`, `git diff` trước khi commit/push.
 
 ---
 

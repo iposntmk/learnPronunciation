@@ -120,10 +120,19 @@ export function generateCombinedFeedback(azureResult, speechSuperResult) {
   return uniqueMessages(messages).slice(0, 4)
 }
 
+// Ghép IPA full từ syllables SpeechSuper, gắn nhấn chính ˈ / phụ ˌ theo refStress.
+function buildSpeechSuperIpa(syllables = []) {
+  return syllables
+    .filter(s => s.phonetic)
+    .map(s => `${s.refStress === 1 ? 'ˈ' : s.refStress === 2 ? 'ˌ' : ''}${s.phonetic}`)
+    .join('')
+}
+
 function mergeStressSuccess(azureResult, speechSuperResult) {
   return {
     ...azureResult,
     stressAssessment: speechSuperResult,
+    speechSuperIpa: buildSpeechSuperIpa(speechSuperResult.syllables),
     combinedFeedback: generateCombinedFeedback(azureResult, speechSuperResult),
     stressScore: speechSuperResult.stressScore ?? null,
   }
@@ -156,6 +165,7 @@ function speechSuperOnlyResult(speechSuperResult) {
     spokenWord: speechSuperResult.word || speechSuperResult.referenceText || '',
     phonemes: [],
     stressAssessment: speechSuperResult,
+    speechSuperIpa: buildSpeechSuperIpa(speechSuperResult.syllables),
     combinedFeedback: generateCombinedFeedback(null, speechSuperResult),
     stressScore: speechSuperResult.stressScore ?? null,
   }

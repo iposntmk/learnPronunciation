@@ -4,6 +4,8 @@ export const WORD_TYPES = ['noun', 'verb', 'adjective', 'adverb', 'phrase', 'oth
 export const WORD_LANGUAGES = ['english', 'spanish', 'italian', 'french']
 
 const DEFAULT_LEVEL_CODES = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+const IMPORT_EXISTING_WORD_BATCH_SIZE = 120
+const IMPORT_WRITE_BATCH_SIZE = 200
 export let LEVELS = [...DEFAULT_LEVEL_CODES]
 
 export function setKnownLevels(codes) {
@@ -695,6 +697,40 @@ function buildPartialUpdate(parsed) {
   return fields
 }
 
+async function fetchExistingWordsByNormalizedWords(client, normalizedWords, onProgress = null) {
+  const words = [...new Set((normalizedWords || [])
+    .map(word => String(word || '').trim().toLowerCase())
+    .filter(Boolean))]
+  const existing = []
+
+  for (let i = 0; i < words.length; i += IMPORT_EXISTING_WORD_BATCH_SIZE) {
+    const chunk = words.slice(i, i + IMPORT_EXISTING_WORD_BATCH_SIZE)
+    const { data, error } = await client
+      .from('words')
+      .select('id, normalized_word, language, created_at')
+      .in('normalized_word', chunk)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    existing.push(...(data || []))
+    onProgress?.(Math.min(i + chunk.length, words.length), words.length)
+  }
+
+  existing.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+  return existing
+}
+
+async function insertWordsInBatches(client, rows, onBatch = null) {
+  const inserted = []
+  for (let i = 0; i < rows.length; i += IMPORT_WRITE_BATCH_SIZE) {
+    const chunk = rows.slice(i, i + IMPORT_WRITE_BATCH_SIZE)
+    const { data, error } = await client.from('words').insert(chunk).select('*')
+    if (error) throw error
+    inserted.push(...(data || []))
+    onBatch?.(chunk.length)
+  }
+  return inserted
+}
+
 export async function importWords(rows, categories = [], { onProgress } = {}) {
   const client = requireSupabase()
   const report = (event) => { try { onProgress?.(event) } catch {} }
@@ -724,12 +760,9 @@ export async function importWords(rows, categories = [], { onProgress } = {}) {
 
   const normalizedWords = [...new Set(dedupedRows.map(p => String(p.word).trim().toLowerCase()))]
   report({ phase: 'fetching', current: 0, total: normalizedWords.length })
-  const { data: existing, error: fetchErr } = await client
-    .from('words')
-    .select('id, normalized_word, language, created_at')
-    .in('normalized_word', normalizedWords)
-    .order('created_at', { ascending: true })
-  if (fetchErr) throw fetchErr
+  const existing = await fetchExistingWordsByNormalizedWords(client, normalizedWords, (current, total) => {
+    report({ phase: 'fetching', current, total })
+  })
 
   const existingIdByKey = new Map()
   for (const w of existing || []) {
@@ -771,11 +804,11 @@ export async function importWords(rows, categories = [], { onProgress } = {}) {
 
   if (toInsert.length > 0) {
     report({ phase: 'inserting', current: processed, total: totalWrites })
-    const { data, error } = await client.from('words').insert(toInsert).select('*')
-    if (error) throw error
-    inserted.push(...(data || []))
-    processed += toInsert.length
-    report({ phase: 'inserting', current: processed, total: totalWrites })
+    const data = await insertWordsInBatches(client, toInsert, (count) => {
+      processed += count
+      report({ phase: 'inserting', current: processed, total: totalWrites })
+    })
+    inserted.push(...data)
   }
 
   for (const op of updateOps) {
@@ -816,12 +849,7 @@ export async function previewWordsImport(rows, categories = [], levels = []) {
   const normalizedWords = [...new Set(dedupedRows.map(r => String(r.parsed.word).trim().toLowerCase()))]
   const existingIdByKey = new Map()
   if (normalizedWords.length > 0) {
-    const { data: existing, error } = await client
-      .from('words')
-      .select('id, normalized_word, language, created_at')
-      .in('normalized_word', normalizedWords)
-      .order('created_at', { ascending: true })
-    if (error) throw error
+    const existing = await fetchExistingWordsByNormalizedWords(client, normalizedWords)
     for (const w of existing || []) {
       const key = `${w.normalized_word}|${w.language || 'english'}`
       if (!existingIdByKey.has(key)) existingIdByKey.set(key, w.id)
@@ -947,11 +975,11 @@ export async function importResolvedWords(previewRows, { onProgress } = {}) {
 
   if (toInsert.length > 0) {
     report({ phase: 'inserting', current: processed, total: totalWrites })
-    const { data, error } = await client.from('words').insert(toInsert).select('*')
-    if (error) throw error
-    inserted.push(...(data || []))
-    processed += toInsert.length
-    report({ phase: 'inserting', current: processed, total: totalWrites })
+    const data = await insertWordsInBatches(client, toInsert, (count) => {
+      processed += count
+      report({ phase: 'inserting', current: processed, total: totalWrites })
+    })
+    inserted.push(...data)
   }
 
   for (const op of updateOps) {

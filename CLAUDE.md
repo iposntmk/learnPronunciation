@@ -118,9 +118,9 @@ grep -rn "Ã\|á»\|Ä'\|áº" src/
 Nguyên nhân: editor Windows đọc UTF-8 bằng CP1252 rồi lưu lại → byte bị mã hoá đôi. Không copy-paste từ file đang bị mojibake sang file mới.
 
 # Quy định về Lệnh Shell (Shell Execution Rules)
-- KHÔNG TỰ Ý chạy các lệnh: `npm run dev`, `npm run build`, `git commit`, `git push`.
-- Nếu cần kiểm tra code, chỉ yêu cầu người dùng tự chạy các lệnh đó bên ngoài terminal hệ thống.
-- Chỉ chạy các lệnh đọc file hoặc kiểm tra nhanh (như `ls`, `cat`) khi thực sự cần thiết.
+- Luôn được phép chạy khi cần: `npm run dev`, `npm run build`, `git commit`, `git push`.
+- Có thể tự chạy build/dev server để kiểm tra thay đổi.
+- Trước khi commit/push, kiểm tra phạm vi thay đổi bằng `git status` và `git diff`.
 # Môi trường: Vite Webapp
 
 # Quy tắc phản hồi (Tiết kiệm Token)

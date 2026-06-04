@@ -1,3 +1,4 @@
 export function formatIpa(phoneme) {
-  return `${phoneme.isStressed ? 'ˈ' : ''}${phoneme.ipa}`
+  const mark = phoneme.isStressed ? 'ˈ' : phoneme.isSecondaryStress ? 'ˌ' : ''
+  return `${mark}${phoneme.ipa}`
 }
