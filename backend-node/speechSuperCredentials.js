@@ -1,14 +1,20 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
-import { canUseSupabaseServiceClient, getSupabaseServiceClient } from './supabaseServer.js'
+import { getSupabaseServiceClient } from './supabaseServer.js'
 import { sendSpeechSuperRequest } from './speechSuperApi.js'
+import { decryptSecret, encryptSecret } from './secretCrypto.js'
+import {
+  PROVIDER,
+  appendHistory,
+  fetchCredentialRow,
+  normalizeMode,
+  reactivateCredential,
+  statusFromRow,
+  updateLegacyCredential,
+  versionColumnsMissing,
+} from './speechSuperCredentialStore.js'
 
-const PROVIDER = 'speechsuper'
-const MODES = new Set(['azure', 'speechsuper', 'both'])
+const CREDENTIAL_CACHE_MS = 5 * 60 * 1000
 
-function normalizeMode(value) {
-  const mode = String(value || '').trim().toLowerCase()
-  return MODES.has(mode) ? mode : 'azure'
-}
+let credentialCache = { expiresAt: 0, value: null }
 
 function envCredential() {
   const appKey = (process.env.SPEECHSUPER_APP_KEY || '').trim()
@@ -29,71 +35,14 @@ function envCredential() {
   }
 }
 
-function encryptionKey() {
-  const value = (process.env.CREDENTIAL_ENCRYPTION_KEY || '').trim()
-  if (!value) throw new Error('CREDENTIAL_ENCRYPTION_KEY is missing.')
-  return createHash('sha256').update(value).digest()
-}
-
-function encryptSecret(value) {
-  const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', encryptionKey(), iv)
-  const ciphertext = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()])
-  return JSON.stringify({
-    v: 1,
-    iv: iv.toString('base64'),
-    tag: cipher.getAuthTag().toString('base64'),
-    data: ciphertext.toString('base64'),
-  })
-}
-
-function decryptSecret(ciphertext) {
-  if (!ciphertext) return ''
-  const payload = JSON.parse(ciphertext)
-  const decipher = createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(payload.iv, 'base64'))
-  decipher.setAuthTag(Buffer.from(payload.tag, 'base64'))
-  return Buffer.concat([
-    decipher.update(Buffer.from(payload.data, 'base64')),
-    decipher.final(),
-  ]).toString('utf8')
-}
-
-function statusFromRow(row) {
-  return {
-    provider: PROVIDER,
-    source: 'database',
-    configured: Boolean(row?.app_key_ciphertext && row?.secret_key_ciphertext),
-    appKeyConfigured: Boolean(row?.app_key_ciphertext),
-    secretKeyConfigured: Boolean(row?.secret_key_ciphertext),
-    userId: row?.user_id || 'guest',
-    scoringMode: normalizeMode(row?.scoring_mode),
-    expiresAt: row?.expires_at || null,
-    lastTestedAt: row?.last_tested_at || null,
-    lastTestOk: row?.last_test_ok ?? null,
-    updatedAt: row?.updated_at || null,
-  }
-}
-
-async function fetchCredentialRow() {
-  if (!canUseSupabaseServiceClient()) return null
-  const { data, error } = await getSupabaseServiceClient()
-    .from('provider_credentials')
-    .select('*')
-    .eq('provider', PROVIDER)
-    .maybeSingle()
-  if (error?.code === '42P01' || /provider_credentials/i.test(error?.message || '')) return null
-  if (error) throw error
-  return data
-}
-
-export async function getSpeechSuperCredentialStatus({ includeEnvFallback = true } = {}) {
+export async function getSpeechSuperCredentialStatus({ includeEnvFallback = true, includeHistory = false } = {}) {
   const row = await fetchCredentialRow()
-  if (row) return statusFromRow(row)
+  if (row) return appendHistory(statusFromRow(row), includeHistory)
   if (includeEnvFallback) {
     const env = envCredential()
-    return { ...env, appKey: undefined, secretKey: undefined }
+    return appendHistory({ ...env, appKey: undefined, secretKey: undefined }, includeHistory)
   }
-  return {
+  return appendHistory({
     provider: PROVIDER,
     source: 'database',
     configured: false,
@@ -104,20 +53,30 @@ export async function getSpeechSuperCredentialStatus({ includeEnvFallback = true
     expiresAt: null,
     lastTestedAt: null,
     lastTestOk: null,
-  }
+  }, includeHistory)
 }
 
-export async function resolveSpeechSuperCredential() {
-  const row = await fetchCredentialRow()
-  if (!row) return envCredential()
-  const appKey = decryptSecret(row.app_key_ciphertext)
-  const secretKey = decryptSecret(row.secret_key_ciphertext)
-  return {
-    ...statusFromRow(row),
-    appKey,
-    secretKey,
-    configured: Boolean(appKey && secretKey),
+export function clearSpeechSuperCredentialCache() {
+  credentialCache = { expiresAt: 0, value: null }
+}
+
+export async function resolveSpeechSuperCredential({ forceRefresh = false } = {}) {
+  if (!forceRefresh && credentialCache.value && Date.now() < credentialCache.expiresAt) {
+    return credentialCache.value
   }
+
+  const row = await fetchCredentialRow()
+  const credential = row
+    ? {
+        ...statusFromRow(row),
+        appKey: decryptSecret(row.app_key_ciphertext),
+        secretKey: decryptSecret(row.secret_key_ciphertext),
+      }
+    : envCredential()
+
+  credential.configured = Boolean(credential.appKey && credential.secretKey)
+  credentialCache = { value: credential, expiresAt: Date.now() + CREDENTIAL_CACHE_MS }
+  return credential
 }
 
 function normalizeExpiresAt(value) {
@@ -127,30 +86,74 @@ function normalizeExpiresAt(value) {
   return date.toISOString()
 }
 
-export async function updateSpeechSuperCredential({ appKey, secretKey, userId, scoringMode, expiresAt, updatedBy }) {
-  const service = getSupabaseServiceClient()
-  const existing = await fetchCredentialRow()
+function trimmed(value) {
+  return String(value || '').trim()
+}
+
+function buildCredentialRow({ appKey, secretKey, userId, scoringMode, expiresAt, existing, updatedBy }) {
   const env = envCredential()
-  const next = {
+  return {
     provider: PROVIDER,
-    app_key_ciphertext: String(appKey || '').trim()
-      ? encryptSecret(appKey.trim())
+    app_key_ciphertext: trimmed(appKey)
+      ? encryptSecret(trimmed(appKey))
       : existing?.app_key_ciphertext || (env.appKey ? encryptSecret(env.appKey) : null),
-    secret_key_ciphertext: String(secretKey || '').trim()
-      ? encryptSecret(secretKey.trim())
+    secret_key_ciphertext: trimmed(secretKey)
+      ? encryptSecret(trimmed(secretKey))
       : existing?.secret_key_ciphertext || (env.secretKey ? encryptSecret(env.secretKey) : null),
     user_id: String(userId || existing?.user_id || 'guest').trim() || 'guest',
     scoring_mode: normalizeMode(scoringMode || existing?.scoring_mode),
     expires_at: normalizeExpiresAt(expiresAt),
+    is_active: true,
+    created_by: updatedBy,
     updated_by: updatedBy,
   }
-  const { data, error } = await service
-    .from('provider_credentials')
-    .upsert(next, { onConflict: 'provider' })
-    .select('*')
-    .single()
-  if (error) throw error
-  return statusFromRow(data)
+}
+
+export async function updateSpeechSuperCredential({
+  appKey,
+  secretKey,
+  userId,
+  scoringMode,
+  expiresAt,
+  updatedBy,
+  includeHistory = false,
+}) {
+  const service = getSupabaseServiceClient()
+  const existing = await fetchCredentialRow()
+  const next = buildCredentialRow({ appKey, secretKey, userId, scoringMode, expiresAt, existing, updatedBy })
+
+  if (existing && !existing.id) {
+    const row = await updateLegacyCredential(service, next)
+    clearSpeechSuperCredentialCache()
+    return appendHistory(statusFromRow(row), includeHistory)
+  }
+
+  if (existing?.id) {
+    const { error } = await service
+      .from('provider_credentials')
+      .update({
+        is_active: false,
+        deactivated_at: new Date().toISOString(),
+        deactivated_by: updatedBy,
+        updated_by: updatedBy,
+      })
+      .eq('id', existing.id)
+    if (error) throw error
+  }
+
+  const { data, error } = await service.from('provider_credentials').insert(next).select('*').single()
+  if (error) {
+    await reactivateCredential(service, existing, updatedBy)
+    if (versionColumnsMissing(error)) {
+      const row = await updateLegacyCredential(service, next)
+      clearSpeechSuperCredentialCache()
+      return appendHistory(statusFromRow(row), includeHistory)
+    }
+    throw error
+  }
+
+  clearSpeechSuperCredentialCache()
+  return appendHistory(statusFromRow(data), includeHistory)
 }
 
 function silenceWav() {
@@ -216,12 +219,12 @@ export async function testSpeechSuperCredential(payload = {}, updatedBy = null) 
 
   const row = await fetchCredentialRow()
   if (row) {
-    const { error } = await getSupabaseServiceClient()
+    const query = getSupabaseServiceClient()
       .from('provider_credentials')
       .update({ last_tested_at: new Date().toISOString(), last_test_ok: ok, updated_by: updatedBy })
-      .eq('provider', PROVIDER)
+    const { error } = row.id ? await query.eq('id', row.id) : await query.eq('provider', PROVIDER)
     if (error) throw error
   }
 
-  return { ok, detail, status: await getSpeechSuperCredentialStatus() }
+  return { ok, detail, status: await getSpeechSuperCredentialStatus({ includeHistory: true }) }
 }

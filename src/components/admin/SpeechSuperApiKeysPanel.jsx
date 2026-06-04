@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { FlaskConical, KeyRound, RefreshCw, Save } from 'lucide-react'
 import { supabase } from '../../supabaseClient.js'
+import SpeechSuperCredentialHistory from './SpeechSuperCredentialHistory.jsx'
 
 const emptyForm = {
   appKey: '',
@@ -171,6 +172,8 @@ export default function SpeechSuperApiKeysPanel() {
           <StatusCard label="last test" value={status?.lastTestedAt ? `${status.lastTestOk ? 'ok' : 'failed'} · ${formatDate(status.lastTestedAt)}` : '-'} />
         </div>
       </section>
+
+      <SpeechSuperCredentialHistory history={status?.history} />
 
       <form onSubmit={save} className="rounded-2xl border border-white/10 bg-white/5 p-3 sm:p-4 grid gap-3">
         <div className="grid gap-3 sm:grid-cols-2">

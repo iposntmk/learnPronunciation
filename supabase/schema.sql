@@ -28,15 +28,20 @@ create table public.profiles (
 );
 
 create table public.provider_credentials (
-  provider text primary key,
+  id uuid primary key default gen_random_uuid(),
+  provider text not null,
   app_key_ciphertext text,
   secret_key_ciphertext text,
   user_id text not null default 'guest',
   scoring_mode text not null default 'azure' check (scoring_mode in ('azure', 'speechsuper', 'both')),
   expires_at timestamptz,
+  is_active boolean not null default true,
   last_tested_at timestamptz,
   last_test_ok boolean,
+  created_by uuid references public.profiles(id) on delete set null,
   updated_by uuid references public.profiles(id) on delete set null,
+  deactivated_at timestamptz,
+  deactivated_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -449,6 +454,8 @@ create index user_word_progress_user_idx on public.user_word_progress(user_id);
 create index pronunciation_attempts_user_word_idx on public.pronunciation_attempts(user_id, word_id, created_at desc);
 create index user_sentence_progress_user_idx on public.user_sentence_progress(user_id);
 create index sentence_pronunciation_attempts_user_sentence_idx on public.sentence_pronunciation_attempts(user_id, sentence_id, created_at desc);
+create unique index provider_credentials_one_active_provider_idx on public.provider_credentials(provider) where is_active;
+create index provider_credentials_provider_created_idx on public.provider_credentials(provider, created_at desc);
 
 alter table public.levels enable row level security;
 alter table public.profiles enable row level security;
